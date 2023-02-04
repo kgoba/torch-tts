@@ -1,22 +1,26 @@
 import numpy as np
 import torchaudio
 
+
 class AudioFrontendConfig:
     sample_rate = 16000
-    stft_hop_length = 0.010
-    stft_win_length = 0.030
+    hop_length = 0.010
+    win_length = 0.030
     num_mels = 80
     fmin = 50
     fmax = 7600
 
-    def n_fft(self):
-        return int(0.5 + self.sample_rate * self.stft_win_length)
+    def from_json(self, json):
+        for key in json:
+            self.__setattr__(key, json[key])
+        return self
+
 
 class AudioFrontend:
     def __init__(self, config):
         self.config = config
-        self.n_fft = int(0.5 + config.sample_rate * config.stft_win_length)
-        self.hop_length = int(0.5 + config.sample_rate * config.stft_hop_length)
+        self.n_fft = int(0.5 + config.sample_rate * config.win_length)
+        self.hop_length = int(0.5 + config.sample_rate * config.hop_length)
         n_stft = (self.n_fft // 2) + 1
         self.stft_to_mels = torchaudio.transforms.MelScale(n_mels=self.config.num_mels, sample_rate=self.config.sample_rate, n_stft=n_stft, 
                                                            f_min=self.config.fmin, f_max=self.config.fmax, norm="slaney")

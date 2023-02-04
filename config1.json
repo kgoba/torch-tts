@@ -1,0 +1,35 @@
+{
+    "dataset": {
+        "root": "../RDH_VL",
+        "type": "vl"
+    },
+    "text": {
+        "alphabet": " abcdefghijklmnopqrstuvwxyzāēīūšžčķģļņ-:;,.!?()\"",
+        "normalizers": ["lowercase"]
+    },
+    "audio": {
+        "sample_rate": 16000,
+        "hop_length": 0.010,
+        "win_length": 0.030,
+        "num_mels": 80,
+        "fmin": 50,
+        "fmax": 7600
+    },
+    "model": {
+        "r": 2,
+        "encoder": {
+            "dim_emb": 128,
+            "dim_pre": 128,
+            "dim_rnn": 128,
+            "dim_enc": 128
+        },
+        "decoder": {
+            "dim_pre": 128,
+            "dim_att": 128
+        }
+    },
+    "training": {
+        "lr": 0.001,
+        "epochs": 10000
+    }
+}
