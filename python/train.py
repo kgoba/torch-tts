@@ -101,5 +101,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset", help="Dataset path")
     parser.add_argument("config", help="Configuration file")
-    sys.exit(main(parser.parse_args()))
+    args = parser.parse_args()
+    rc = main()
+    sys.exit(rc)
 
