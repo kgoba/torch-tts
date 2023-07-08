@@ -16,7 +16,7 @@ class Encoder(nn.Module):
 
     def forward(self, x):
         # x = B x T
-        x = self.emb(x) # B x T x D_emb
-        x = self.pre_net(x) # B x T x D_pre
-        x = self.cbhg(x) # B x T x D_rnn
+        x = self.emb(x)  # B x T x D_emb
+        x = self.pre_net(x)  # B x T x D_pre
+        x = self.cbhg(x)  # B x T x D_rnn
         return x

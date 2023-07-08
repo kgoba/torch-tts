@@ -18,24 +18,20 @@ class TextEncoder:
     def decode(self, enc, decode_unk=None):
         if decode_unk:
             return [
-                self.alphabet[i] if i >= 0 and i < len(self.alphabet) else decode_unk
-                for i in enc
+                self.alphabet[i] if i >= 0 and i < len(self.alphabet) else decode_unk for i in enc
             ]
         else:
             return [self.alphabet[i] for i in enc if i >= 0]
 
 
 class TranscribedAudioDataset(torch.utils.data.Dataset):
-    def __init__(self, transcript_path, file_fn=None):
-        if file_fn is None:
-            file_fn = lambda x: x
-        ds_dir = os.path.split(transcript_path)[0]
+    def __init__(self, transcript_path, audio_dir, filename_fn=None):
+        if filename_fn is None:
+            filename_fn = lambda x: x
         with open(transcript_path) as text_file:
-            lines_split = [
-                line.strip().split("|")[:2] for line in text_file.readlines()
-            ]
+            lines_split = [line.strip().split("|")[:2] for line in text_file.readlines()]
             self.transcripts = [
-                (file_id, transcript, os.path.join(ds_dir, file_fn(file_id)))
+                (file_id, transcript, os.path.join(audio_dir, filename_fn(file_id)))
                 for file_id, transcript in lines_split
             ]
 
@@ -44,7 +40,7 @@ class TranscribedAudioDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         utt_id, transcript, audio_path = self.transcripts[index]
-        audio, sr = torchaudio.load(audio_path)
+        audio, sr = torchaudio.load(audio_path, channels_first=True)
         if audio.shape[0] > 1:
             audio = audio.mean(dim=0)  # mix multichannel to mono
         else:

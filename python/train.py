@@ -5,10 +5,14 @@ from audio import AudioFrontend, AudioFrontendConfig
 from dataset import TranscribedAudioDataset, TacotronDataset, TextEncoder
 import json, os, sys
 
+
 def check_dataset_stats(dataset, sample_size=200):
-    print(f'Dataset size: {len(dataset)}')
-    sample, _ = torch.utils.data.random_split(dataset, [sample_size, len(dataset) - sample_size], 
-                                                        generator=torch.Generator().manual_seed(142))
+    print(f"Dataset size: {len(dataset)}")
+    sample, _ = torch.utils.data.random_split(
+        dataset,
+        [sample_size, len(dataset) - sample_size],
+        generator=torch.Generator().manual_seed(142),
+    )
     utt_len = []
     audio_len = []
     audio_pwr = []
@@ -16,11 +20,18 @@ def check_dataset_stats(dataset, sample_size=200):
         utt_id, transcript, audio, sr = dataset[i]
         utt_len.append(len(transcript))
         audio_len.append(len(audio) / sr)
-        audio_pwr.append(10*np.log10(np.mean(audio.numpy()**2)))
+        audio_pwr.append(10 * np.log10(np.mean(audio.numpy() ** 2)))
 
-    print(f'Utterance length: {np.median(utt_len):.1f} (median), {np.quantile(utt_len, 0.05):.1f}..{np.quantile(utt_len, 0.95):.1f} (5%..95%) characters')
-    print(f'Audio length:     {np.median(audio_len):.1f} (median), {np.quantile(audio_len, 0.05):.1f}..{np.quantile(audio_len, 0.95):.1f} (5%..95%) s')
-    print(f'Audio RMS power:  {np.median(audio_pwr):.1f} (median), {np.quantile(audio_pwr, 0.05):.1f}..{np.quantile(audio_pwr, 0.95):.1f} (5%..95%) dBFS')
+    print(
+        f"Utterance length: {np.median(utt_len):.1f} (median), {np.quantile(utt_len, 0.05):.1f}..{np.quantile(utt_len, 0.95):.1f} (5%..95%) characters"
+    )
+    print(
+        f"Audio length:     {np.median(audio_len):.1f} (median), {np.quantile(audio_len, 0.05):.1f}..{np.quantile(audio_len, 0.95):.1f} (5%..95%) s"
+    )
+    print(
+        f"Audio RMS power:  {np.median(audio_pwr):.1f} (median), {np.quantile(audio_pwr, 0.05):.1f}..{np.quantile(audio_pwr, 0.95):.1f} (5%..95%) dBFS"
+    )
+
 
 # def loss_fn(outputs, labels, mask):
 #     loss = (outputs - labels).abs() * mask # nn.functional.l1_loss(outputs, labels, reduction='none') * mask
@@ -43,6 +54,7 @@ def check_dataset_stats(dataset, sample_size=200):
 #         loss_hist.append(loss.item() * 15)
 #     return loss_hist
 
+
 def main(args):
     dataset_path = args.dataset
     config_path = args.config
@@ -51,24 +63,29 @@ def main(args):
     test_size = 200
 
     config = json.load(open(config_path))
-    audio_dataset = TranscribedAudioDataset(os.path.join(dataset_path, 'transcripts.txt'), file_fn=lambda x: x + '.wav')
+    audio_dataset = TranscribedAudioDataset(
+        os.path.join(dataset_path, "transcripts.txt"), file_fn=lambda x: x + ".wav"
+    )
     audio_frontend = AudioFrontend(AudioFrontendConfig().from_json(config["audio"]))
     text_encoder = TextEncoder(config["text"]["alphabet"])
     dataset = TacotronDataset(audio_dataset, audio_frontend, text_encoder)
 
     check_dataset_stats(audio_dataset)
 
-    train_dataset, test_dataset, _ = torch.utils.data.random_split(dataset, [train_size, test_size, len(dataset) - train_size - test_size], 
-                                                                generator=torch.Generator().manual_seed(42))
+    train_dataset, test_dataset, _ = torch.utils.data.random_split(
+        dataset,
+        [train_size, test_size, len(dataset) - train_size - test_size],
+        generator=torch.Generator().manual_seed(42),
+    )
 
-    print(f'Dataset size: {len(train_dataset)} train + {len(test_dataset)} test')
+    print(f"Dataset size: {len(train_dataset)} train + {len(test_dataset)} test")
 
     if torch.cuda.is_available():
         device = "cuda"
     elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
         device = "mps"
     else:
-        device= "cpu"
+        device = "cpu"
     print(f"Using device {device}")
 
     # model = MelToSTFTModel(80, 241)
@@ -96,12 +113,13 @@ def main(args):
 
     return 0
 
+
 if __name__ == "__main__":
     import argparse
+
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset", help="Dataset path")
     parser.add_argument("config", help="Configuration file")
     args = parser.parse_args()
     rc = main()
     sys.exit(rc)
-

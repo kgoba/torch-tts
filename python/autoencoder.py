@@ -24,11 +24,10 @@ class VAE(nn.Module):
 
     def forward(self, x):
         mu, logvar = self.encoder_mu(x), self.encoder_logvar(x)
-        sigma = torch.exp(logvar / 2) # == sqrt(e^log_var)
+        sigma = torch.exp(logvar / 2)  # == sqrt(e^log_var)
         z_sampled = torch.distributions.distribution.Normal(mu, sigma).rsample()
         x_hat = self.decoder(z_sampled)
 
         # rec_loss = self.loss_fn(x_hat, x)
         # kl_loss = -0.5 * (1 + logvar - mu.pow(2) - logvar.exp())
-        return x_hat, mu, logvar, z_sampled # rec_loss + kl_loss
-
+        return x_hat, mu, logvar, z_sampled  # rec_loss + kl_loss
