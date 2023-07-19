@@ -1,12 +1,24 @@
 import torch
 import numpy as np
+import yaml, os, sys, logging
 from tqdm.auto import tqdm
+
 from audio import AudioFrontend, AudioFrontendConfig
-from dataset import TranscribedAudioDataset, TacotronDataset, TextEncoder
-import json, os, sys
+from dataset import TranscribedAudioDataset, TacotronDataset, TextEncoder, collate_fn_tacotron
+from tacotron import build_tacotron
+
+logger = logging.getLogger(__name__)
 
 
-def check_dataset_stats(dataset, sample_size=200):
+def find_available_device():
+    if torch.cuda.is_available():
+        return "cuda"
+    elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
+        return "mps"
+    return "cpu"
+
+
+def check_dataset_stats(dataset, sample_size=500):
     print(f"Dataset size: {len(dataset)}")
     sample, _ = torch.utils.data.random_split(
         dataset,
@@ -31,7 +43,9 @@ def check_dataset_stats(dataset, sample_size=200):
     print(
         f"Audio RMS power:  {np.median(audio_pwr):.1f} (median), {np.quantile(audio_pwr, 0.05):.1f}..{np.quantile(audio_pwr, 0.95):.1f} (5%..95%) dBFS"
     )
-
+    print(
+        f"Total audio length: {len(dataset) * np.mean(audio_len) / 3600:.1f} h (estimated)"
+    )
 
 # def loss_fn(outputs, labels, mask):
 #     loss = (outputs - labels).abs() * mask # nn.functional.l1_loss(outputs, labels, reduction='none') * mask
@@ -59,12 +73,16 @@ def main(args):
     dataset_path = args.dataset
     config_path = args.config
 
-    train_size = 1000
     test_size = 200
 
-    config = json.load(open(config_path))
+    config = yaml.safe_load(open(config_path))
+    random_seed = config["seed"] or 42
+
+    # dataset = build_dataset(dataset_path, config)
     audio_dataset = TranscribedAudioDataset(
-        os.path.join(dataset_path, "transcripts.txt"), file_fn=lambda x: x + ".wav"
+        os.path.join(dataset_path, "transcripts.txt"),
+        dataset_path,
+        filename_fn=lambda x: x + ".wav",
     )
     audio_frontend = AudioFrontend(AudioFrontendConfig().from_json(config["audio"]))
     text_encoder = TextEncoder(config["text"]["alphabet"])
@@ -72,21 +90,46 @@ def main(args):
 
     check_dataset_stats(audio_dataset)
 
-    train_dataset, test_dataset, _ = torch.utils.data.random_split(
+    train_dataset, test_dataset = torch.utils.data.random_split(
         dataset,
-        [train_size, test_size, len(dataset) - train_size - test_size],
-        generator=torch.Generator().manual_seed(42),
+        [len(dataset) - test_size, test_size],
+        generator=torch.Generator().manual_seed(random_seed),
     )
 
     print(f"Dataset size: {len(train_dataset)} train + {len(test_dataset)} test")
 
-    if torch.cuda.is_available():
-        device = "cuda"
-    elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
-        device = "mps"
-    else:
-        device = "cpu"
+    device = find_available_device()
     print(f"Using device {device}")
+    print(f"Number of CPUs: {os.cpu_count()}")
+
+    device = 'mps'
+
+    # train_loader = torch.utils.data.DataLoader(train_dataset, shuffle=True, collate_fn=collate_fn, batch_size=100, pin_memory=True)
+    test_loader = torch.utils.data.DataLoader(test_dataset, shuffle=False, collate_fn=collate_fn_tacotron, batch_size=16, pin_memory=True)
+
+    model = build_tacotron(config)
+    model.to(device)
+
+    r = 2
+    for batch in test_loader:
+        input, imask, x, xmask = batch
+
+        T = (x.shape[1] // r) * r
+        x = x[:, :T, :]
+        xmask = xmask[:, :T, :]
+
+        print(torch.min(x), torch.mean(x), torch.median(x), torch.max(x))
+
+        x = x.to(device)
+        xmask = xmask.to(device)
+
+        y, w = model(input.to(device), imask.to(device), x)
+        # print(x.shape, y.shape, y.dtype)
+        print(x.device, y.device, xmask.device)
+
+        loss = torch.mean(torch.nn.functional.l1_loss(x, y, reduction='none'))  #* xmask)
+        print(loss.shape, loss)
+        break
 
     # model = MelToSTFTModel(80, 241)
     # # model = Autoencoder(STFTEncoder(241, 16), MelToSTFTModel(16, 241))
@@ -96,8 +139,6 @@ def main(args):
     # optimizer = torch.optim.AdamW(model2.parameters(), lr=0.001, amsgrad=True, weight_decay=0.01)
 
     # model2.to(device)
-    # train_loader = torch.utils.data.DataLoader(train_dataset, shuffle=True, collate_fn=collate_fn, batch_size=100, pin_memory=True)
-    # test_loader = torch.utils.data.DataLoader(test_dataset, shuffle=False, collate_fn=collate_fn, batch_size=100, pin_memory=True)
 
     # pbar = tqdm(range(600))
     # loss_hist = []
@@ -121,5 +162,8 @@ if __name__ == "__main__":
     parser.add_argument("dataset", help="Dataset path")
     parser.add_argument("config", help="Configuration file")
     args = parser.parse_args()
-    rc = main()
+
+    logging.basicConfig(level=logging.DEBUG)
+
+    rc = main(args)
     sys.exit(rc)

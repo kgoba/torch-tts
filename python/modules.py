@@ -58,11 +58,15 @@ class CBHG(nn.Module):
         self.max_pool = nn.MaxPool1d(kernel_size=3, stride=1, padding=1)
         self.conv_proj = nn.Sequential(
             nn.Conv1d(
-                len(self.conv_bank) * dim_conv_hidden, dim_proj_hidden, kernel_size=3, bias=False
+                len(self.conv_bank) * dim_conv_hidden,
+                dim_proj_hidden,
+                padding=1,
+                kernel_size=3,
+                bias=False,
             ),
             nn.BatchNorm1d(dim_proj_hidden),
             nn.ReLU(),
-            nn.Conv1d(dim_proj_hidden, dim_input, kernel_size=3),
+            nn.Conv1d(dim_proj_hidden, dim_input, padding=1, kernel_size=3),
             # nn.BatchNorm1d(dim_input),
         )
         self.highway = nn.Sequential(
@@ -95,8 +99,8 @@ class CBHG(nn.Module):
 
 
 class ResGRUCell(nn.GRUCell):
-    def __init__(self, input_size, bias=True, device=None, dtype=None):
-        super().__init__(input_size, input_size, bias, device, dtype)
+    def __init__(self, input_size, bias=True):
+        super().__init__(input_size, input_size, bias=bias)
 
     def forward(self, x, h):
         h = super().forward(x, h)

@@ -2,16 +2,23 @@ import torch
 import torchaudio
 import numpy as np
 import h5py
-import os
+import os, re, logging
+
+logger = logging.getLogger(__name__)
 
 
 class TextEncoder:
-    def __init__(self, alphabet):
+    def __init__(self, alphabet, char_map=None):
+        self.char_map = char_map or dict()
         self.alphabet = alphabet
         self.lookup = {c: i for i, c in enumerate(alphabet)}
 
     def encode(self, text):
+        # text_orig = text
         text = text.lower()
+        for key, value in self.char_map:
+            text = re.sub(key, value, text)
+        # logger.debug(f"Transformed [{text_orig}] to [{text}]")
         encoded = [self.lookup[c] if c in self.lookup else -1 for c in text]
         return encoded
 
@@ -21,7 +28,7 @@ class TextEncoder:
                 self.alphabet[i] if i >= 0 and i < len(self.alphabet) else decode_unk for i in enc
             ]
         else:
-            return [self.alphabet[i] for i in enc if i >= 0]
+            return [self.alphabet[i] for i in enc if i >= 0 and i < len(self.alphabet)]
 
 
 class TranscribedAudioDataset(torch.utils.data.Dataset):
@@ -71,12 +78,16 @@ class TacotronDataset(torch.utils.data.Dataset):
         return utt_id, self.te.encode(transcript), D_db, M_db
 
 
-from .audio import AudioFrontend, AudioFrontendConfig
+from audio import AudioFrontend, AudioFrontendConfig
 
 
-def build_dataset(config) -> TacotronDataset:
-    dataset_path = config["dataset"]["root"]
-    audio_dataset = TranscribedAudioDataset(dataset_path + "/transcripts.txt")
+def build_dataset(dataset_path, config) -> TacotronDataset:
+    # dataset_path = config["dataset"]["root"]
+    audio_dataset = TranscribedAudioDataset(
+        os.path.join(dataset_path, "transcripts.txt"),
+        dataset_path,
+        filename_fn=lambda x: x + ".wav",
+    )
 
     audio_config = AudioFrontendConfig()
     audio_config.from_json(config["audio"])
@@ -87,19 +98,26 @@ def build_dataset(config) -> TacotronDataset:
     return TacotronDataset(audio_dataset, audio_frontend, text_encoder)
 
 
-def collate_fn_tacotron(x):
-    lens = [len(M_db.T) for _, _, _, M_db in x]
-    mask = [torch.from_numpy(np.ones((x, 1))) for x in lens]
-    mask = torch.nn.utils.rnn.pad_sequence(mask, batch_first=True)
-    M_db = [torch.from_numpy(m_fwd(M_db).T) for _, _, _, M_db in x]
+def m_fwd(x):
+    return (x + 120) / 120
+
+
+def m_rev(x):
+    return (x * 120) - 120
+
+
+def collate_fn_tacotron(data):
+    M_db = [m_fwd(M_db).T for _, _, _, M_db in data]
+    omask = [torch.ones((len(x), 1), dtype=torch.int) for x in M_db]
+    omask = torch.nn.utils.rnn.pad_sequence(omask, batch_first=True)
     M_db = torch.nn.utils.rnn.pad_sequence(M_db, batch_first=True)
 
-    tlens = [len(input.T) for input, _, _, _ in x]
-    tmask = [torch.from_numpy(np.ones((x, 1))) for x in tlens]
-    tmask = torch.nn.utils.rnn.pad_sequence(tmask, batch_first=True)
-    input = [torch.from_numpy(input.T) for input, _, _, _ in x]
+    input = [torch.IntTensor(input) for _, input, _, _ in data]
+    imask = [torch.ones(len(x), dtype=torch.int) for x in input]
+    imask = torch.nn.utils.rnn.pad_sequence(imask, batch_first=True)
     input = torch.nn.utils.rnn.pad_sequence(input, batch_first=True)
-    return [input, tmask, M_db, mask]
+
+    return input, imask, M_db, omask
 
 
 def collate_fn_melnet(x):
