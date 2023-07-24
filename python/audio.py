@@ -45,14 +45,22 @@ class AudioFrontend:
         )
         self.spectrogram = Spectrogram(n_fft=self.n_fft, hop_length=self.hop_length, power=2, normalized=True)
 
+    # def spectrogram(self, wave):
+    #     x = wave # .numpy()
+    #     nperseg=self.n_fft
+    #     _, _, z = scipy.signal.stft(x, nfft=self.n_fft, nperseg=nperseg, noverlap=nperseg-self.hop_length, scaling='psd')
+    #     z_mag2 = z.imag**2 + z.real**2
+    #     return torch.as_tensor(z_mag2)
+
     def encode(self, wave, sr):
         if sr != self.config.sample_rate:
             wave = resample(wave, orig_freq=sr, new_freq=self.config.sample_rate)
         D = self.spectrogram(wave)
+        # D = D_cpx.real**2 + D_cpx.imag**2
         M = self.stft_to_mels(D)
         D_db = amplitude_to_DB(D, 10, 1e-12, 0)
         M_db = amplitude_to_DB(M, 10, 1e-12, 0)
-        return D_db, M_db
+        return D_db.T, M_db.T
 
     def decode(self, D_db):
         D = DB_to_amplitude(D_db)
