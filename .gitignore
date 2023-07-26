@@ -4,3 +4,4 @@ models/
 .venv/
 .vscode/
 __pycache__/
+checkpoint_*/

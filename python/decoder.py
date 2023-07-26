@@ -1,6 +1,12 @@
 import torch
 import torch.nn as nn
-from modules import PreNet, ResGRUCell, ResLSTMCell, ContentGeneralAttention, ContentMarkovAttention
+from modules import (
+    PreNet,
+    ResGRUCell,
+    ResLSTMCell,
+    ContentGeneralAttention,
+    ContentMarkovAttention,
+)
 
 
 class Decoder1Cell(nn.Module):
@@ -72,7 +78,7 @@ class DecoderCell(nn.Module):
 
         self.attention_module = ContentMarkovAttention(dim_ctx, dim_att)
         self.pre_net = PreNet(r * dim_mel, dim_pre)
-        self.attention_rnn = nn.LSTMCell(self.dim_rnn + dim_ctx, dim_att)
+        # self.attention_rnn = nn.LSTMCell(self.dim_rnn + dim_ctx, dim_att)
         self.attention_fc = nn.Linear(self.dim_rnn, dim_att)
         self.decoder_rnn_list = nn.ModuleList(
             # [ResGRUCell(self.dim_rnn) for _ in range(self.decoder_depth)]
@@ -110,10 +116,7 @@ class DecoderCell(nn.Module):
         # h_dec:B x D_dec
         x = self.pre_net(x.flatten(1, 2))  # B x D_pre
 
-        ctx_att = torch.bmm(
-            w.unsqueeze(1), memory
-        )  # (B x 1 x L) x (B x L x D_ctx) -> (B x 1 x D_ctx)
-        ctx_att = ctx_att.squeeze(1)  # B x D_ctx
+        ctx_att = torch.bmm(w.unsqueeze(1), memory).squeeze(1)  # B x D_ctx
 
         x_dec = torch.cat((x, ctx_att), dim=1)  # B x (D_att+D_enc)
         for idx, rnn in enumerate(self.decoder_rnn_list):
@@ -169,7 +172,7 @@ class Decoder(nn.Module):
                 # Force teacher inputs
                 y_t = x_split[idx]  # B x r x D_mel
             else:
-                if torch.all(s_t < self.stop_threshold):
+                if torch.all(s_t < self.stop_threshold) or idx > 200:
                     break
             idx += 1
             if x_split is not None and idx >= len(x_split):

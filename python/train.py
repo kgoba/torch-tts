@@ -28,6 +28,8 @@ def main(args):
     config = yaml.safe_load(open(config_path))
     random_seed = config["seed"] or 42
 
+    torch.random.manual_seed(142)
+
     dataset = build_dataset(dataset_path, config)
     # check_dataset_stats(audio_dataset)
 

@@ -38,7 +38,7 @@ class Encoder2(nn.Module):
 
         self.emb = nn.Embedding(alphabet_size, dim_emb, padding_idx=0)
         self.conv = nn.Sequential()
-        for _ in range(3):
+        for _ in range(2):
             self.conv.extend(
                 [
                     nn.Conv1d(
@@ -51,6 +51,17 @@ class Encoder2(nn.Module):
                     nn.ReLU(),
                 ]
             )
+        self.conv.extend(
+            [
+                nn.Conv1d(
+                    dim_emb,
+                    dim_emb,
+                    kernel_size=5,
+                    padding=2
+                ),
+                nn.BatchNorm1d(dim_emb),
+            ]
+        )
         self.rnn = nn.LSTM(dim_emb, dim_out // 2, batch_first=True, bidirectional=True)
 
     def forward(self, x, xmask):

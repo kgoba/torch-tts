@@ -131,9 +131,9 @@ class Trainer:
         logger.info(f"Loading checkpoint from {path}")
         checkpoint = torch.load(path)
         self.step = checkpoint["step"]
-        # load_state_dict(self.model, checkpoint["model_state"])
-        self.model.load_state_dict(checkpoint["model_state"], strict=False)
-        self.optimizer.load_state_dict(checkpoint["optimizer_state"])
+        load_state_dict(self.model, checkpoint["model_state"])
+        # self.model.load_state_dict(checkpoint["model_state"], strict=False)
+        # self.optimizer.load_state_dict(checkpoint["optimizer_state"])
         logger.info(f"Training steps: {self.step}")
 
     def train(self, train_loader, test_loader, loss_fn, device, num_epochs=600):

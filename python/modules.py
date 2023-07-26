@@ -9,11 +9,10 @@ class PreNet(nn.Module):
         super().__init__()
         self.pre_net = nn.Sequential(
             nn.Linear(dim_input, dim_hidden),
-            nn.ReLU(),
+            nn.Tanh(),
             nn.Dropout(),
             nn.Linear(dim_hidden, dim_output),
-            nn.ReLU(),
-            nn.BatchNorm1d(dim_output),
+            nn.Tanh(),
             nn.Dropout(),
         )
 
@@ -254,12 +253,12 @@ class ContentMarkovAttention(nn.Module):
         x = torch.bmm(context, x)  # B x L x 3
 
         # mask each probability according to context length per batch item
-        cmask_extended = torch.stack(
-            [torch.ones_like(cmask), cmask & cmask.roll(-1, dims=1), cmask & cmask.roll(-2, dims=1)], dim=2
-        )
-        x[~cmask_extended] = -1e12
-        # x[:, -1:, 1] = -1e12
-        # x[:, -2:, 2] = -1e12
+        # cmask_extended = torch.stack(
+        #     [torch.ones_like(cmask), cmask & cmask.roll(-1, dims=1), cmask & cmask.roll(-2, dims=1)], dim=2
+        # )
+        # x[~cmask_extended] = -1e12
+        x[:, -1:, 1] = -1e12
+        x[:, -2:, 2] = -1e12
         x = x.softmax(dim=2)
 
         wp = w.unsqueeze(2) * x  # B x L x 3
