@@ -128,8 +128,14 @@ def build_dataset(dataset_path, config, cache_path=None) -> TacotronDataset:
     audio_config = AudioFrontendConfig()
     audio_config.from_json(config["audio"])
     audio_frontend = AudioFrontend(audio_config)
+    text_config = config["text"]
 
-    text_encoder = TextEncoder(config["text"]["alphabet"], config["text"].get("character_map"))
+    text_encoder = TextEncoder(
+        text_config["alphabet"],
+        text_config.get("character_map"),
+        bos=text_config.get("bos_symbols"),
+        eos=text_config.get("eos_symbols"),
+    )
 
     return TacotronDataset(
         audio_dataset,

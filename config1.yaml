@@ -5,7 +5,7 @@ dataset:
     type: "vl"
 
 text:
-    alphabet: " abcdefghijklmnopqrstuvwxyzāēīūšžčķģļņ-:;,.!?()\"'"
+    alphabet: "# abcdefghijklmnopqrstuvwxyzšžčķģļņ_-:;,.!?()\"'"
     # "alphabet": " ˈːaäeioujlļmnņrptkķbdgģfhvszcʒšžčǯ-:;,.!?()\"'"
     character_map: [
         ["[”“]", "\""],
@@ -24,6 +24,8 @@ text:
         ["ū", "u_"]
     ]
     normalizers: ["lowercase"]
+    bos_symbols: "#"
+    eos_symbols: "#"
 
 audio:
     sample_rate: 16000
