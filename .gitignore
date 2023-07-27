@@ -4,4 +4,7 @@ models/
 .venv/
 .vscode/
 __pycache__/
+.DS_Store
+*.h5p
+*.mp4
 checkpoint_*/
