@@ -10,15 +10,6 @@ from tacotron import build_tacotron
 logger = logging.getLogger(__name__)
 
 
-def loss_fn(x, y, mask):
-    loss = torch.nn.functional.l1_loss(x, y, reduction="none")
-    # loss = torch.nn.functional.mse_loss(x, y, reduction="none")
-    loss = torch.mean(loss * mask, dim=2)
-    loss = loss.sum() / mask.sum()
-    return loss
-    # return loss.sqrt()
-
-
 def main(args):
     dataset_path = args.dataset
     config_path = args.config
@@ -30,7 +21,7 @@ def main(args):
 
     torch.random.manual_seed(142)
 
-    dataset = build_dataset(dataset_path, config)
+    dataset = build_dataset(dataset_path, config, "data.h5p")
     # check_dataset_stats(audio_dataset)
 
     train_dataset, test_dataset = torch.utils.data.random_split(
@@ -49,34 +40,17 @@ def main(args):
     )
 
     device = find_available_device()
+    if args.force_cpu:
+        device = "cpu"  # set PYTORCH_ENABLE_MPS_FALLBACK=1
+
     print(f"Using device {device}")
     print(f"Number of CPUs: {os.cpu_count()}")
-
-    # device = "cpu"  # set PYTORCH_ENABLE_MPS_FALLBACK=1
 
     model = build_tacotron(config)
 
     trainer = Trainer(model, args.checkpoint_dir)
 
-    trainer.train(train_loader, test_loader, loss_fn, device)
-
-    # model.to(device)
-    # for batch in test_loader:
-    #     input, imask, x, xmask = batch
-
-    #     print(torch.min(x), torch.mean(x), torch.median(x), torch.max(x))
-
-    #     x = x.to(device)
-    #     xmask = xmask.to(device)
-
-    #     y, w = model(input.to(device), imask.to(device), x)
-    #     # print(x.shape, y.shape, y.dtype)
-    #     print(x.device, y.device, xmask.device)
-
-    #     loss = loss_fn(x, y, xmask)
-    #     print(loss.shape, loss)
-    #     loss.backward()
-    #     break
+    trainer.train(train_loader, test_loader, device)
 
     return 0
 
@@ -88,6 +62,7 @@ if __name__ == "__main__":
     parser.add_argument("dataset", help="Dataset path")
     parser.add_argument("config", help="Configuration file")
     parser.add_argument("--checkpoint_dir", default="checkpoint_default", help="Checkpoint path")
+    parser.add_argument("--force_cpu", action="store_true", help="Force using CPU for training")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)

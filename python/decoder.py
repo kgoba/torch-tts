@@ -76,10 +76,11 @@ class DecoderCell(nn.Module):
         self.decoder_depth = 2
         self.dim_rnn = dim_pre + dim_ctx
 
-        self.attention_module = ContentMarkovAttention(dim_ctx, dim_att)
+        self.attention_module = ContentMarkovAttention(dim_ctx, self.dim_rnn)
+        # self.attention_module = ContentMarkovAttention(dim_ctx, dim_att)
         self.pre_net = PreNet(r * dim_mel, dim_pre)
         # self.attention_rnn = nn.LSTMCell(self.dim_rnn + dim_ctx, dim_att)
-        self.attention_fc = nn.Linear(self.dim_rnn, dim_att)
+        # self.attention_fc = nn.Linear(self.dim_rnn, dim_att, bias=False)
         self.decoder_rnn_list = nn.ModuleList(
             # [ResGRUCell(self.dim_rnn) for _ in range(self.decoder_depth)]
             # [ResLSTMCell(self.dim_rnn, self.dim_rnn) for _ in range(self.decoder_depth)]
@@ -109,7 +110,7 @@ class DecoderCell(nn.Module):
         return w_0, h_dec_0
 
     def forward(self, x, dec_state, memory, mmask):
-        w, h_dec = dec_state
+        w, h_dec = dec_state[0], dec_state[1]
         # x:    B x r x D_mel
         # w:    B x L
         # h_att:B x D_att
@@ -125,8 +126,9 @@ class DecoderCell(nn.Module):
 
         # x_att = torch.cat((x_dec, ctx_att), dim=1)
         # h_att = self.attention_rnn(x_att, h_att)  # B x D_att
-        fb_att = self.attention_fc(x_dec)
-        w = self.attention_module(fb_att, w, memory, mmask)  # B x L
+        # x_att = self.attention_fc(x_dec)
+        x_att = x_dec
+        w = self.attention_module(x_att, w, memory, mmask)  # B x L
 
         dec_state = w, h_dec
         return x_dec, dec_state

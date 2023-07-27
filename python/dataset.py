@@ -8,9 +8,10 @@ logger = logging.getLogger(__name__)
 
 
 class TextEncoder:
-    def __init__(self, alphabet, char_map=None):
+    def __init__(self, alphabet, char_map=None, bos=None, eos=None):
         self.char_map = dict(char_map) if char_map else dict()
-        print(self.char_map)
+        self.bos = bos
+        self.eos = eos
         self.alphabet = alphabet
         self.lookup = {c: (i + 1) for i, c in enumerate(alphabet)}
 
@@ -19,6 +20,10 @@ class TextEncoder:
         text = text.lower()
         for key, value in self.char_map.items():
             text = re.sub(key, value, text)
+        if self.bos:
+            text = self.bos + text
+        if self.eos:
+            text = text + self.eof
         # if text != text_orig:
         #     logger.debug(f"Transformed [{text_orig}] to [{text}]")
         if encode_unk:
@@ -30,7 +35,7 @@ class TextEncoder:
                 if not c in self.lookup:
                     unk_chars += c
             if unk_chars:
-                print(f"Unknown characters: {unk_chars}")
+                logger.warning(f"Unknown characters: {unk_chars}")
         return encoded
 
     def decode(self, enc, decode_unk=None):
@@ -88,8 +93,9 @@ class TacotronDataset(torch.utils.data.Dataset):
     def __getitem__(self, index):
         utt_id, transcript, audio, sr = self.ds[index]
         if self.fs and utt_id in self.fs:
-            D_db = self.fs.get(f"{utt_id}/stft")[()]
-            M_db = self.fs.get(f"{utt_id}/mel")[()]
+            # D_db = torch.from_numpy(self.fs.get(f"{utt_id}/stft")[()])
+            D_db = None
+            M_db = torch.from_numpy(self.fs.get(f"{utt_id}/mel")[()])
         else:
             D_db, M_db = self.af.encode(audio, sr)
             T = (D_db.shape[0] // self.r) * self.r
@@ -98,7 +104,7 @@ class TacotronDataset(torch.utils.data.Dataset):
             assert D_db.shape[0] == M_db.shape[0]
 
             if self.fs:
-                self.fs.create_dataset(f"{utt_id}/stft", data=D_db)
+                # self.fs.create_dataset(f"{utt_id}/stft", data=D_db)
                 self.fs.create_dataset(f"{utt_id}/mel", data=M_db)
         return utt_id, self.te.encode(transcript), D_db, M_db
 
@@ -110,7 +116,7 @@ def text_has_no_digits(text):
     return re.search(rf"\d", text) is None
 
 
-def build_dataset(dataset_path, config) -> TacotronDataset:
+def build_dataset(dataset_path, config, cache_path=None) -> TacotronDataset:
     # dataset_path = config["dataset"]["root"]
     audio_dataset = TranscribedAudioDataset(
         os.path.join(dataset_path, "transcripts.txt"),
@@ -126,7 +132,11 @@ def build_dataset(dataset_path, config) -> TacotronDataset:
     text_encoder = TextEncoder(config["text"]["alphabet"], config["text"].get("character_map"))
 
     return TacotronDataset(
-        audio_dataset, audio_frontend, text_encoder, r=config["model"]["decoder"]["r"]
+        audio_dataset,
+        audio_frontend,
+        text_encoder,
+        r=config["model"]["decoder"]["r"],
+        cache_path=cache_path,
     )
 
 

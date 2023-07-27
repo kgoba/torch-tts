@@ -3,6 +3,7 @@ from torchaudio.functional import (
     DB_to_amplitude,
     griffinlim,
     resample,
+    vad
 )
 from torchaudio.transforms import MelScale, InverseMelScale, Spectrogram
 
@@ -55,6 +56,8 @@ class AudioFrontend:
     def encode(self, wave, sr):
         if sr != self.config.sample_rate:
             wave = resample(wave, orig_freq=sr, new_freq=self.config.sample_rate)
+        # wave = vad(wave, self.config.sample_rate, pre_trigger_time=0.05)
+        wave = vad(wave.flip(0), self.config.sample_rate, pre_trigger_time=0.1).flip(0)
         D = self.spectrogram(wave)
         # D = D_cpx.real**2 + D_cpx.imag**2
         M = self.stft_to_mels(D)

@@ -262,9 +262,9 @@ class ContentMarkovAttention(nn.Module):
         x = x.softmax(dim=2)
 
         wp = w.unsqueeze(2) * x  # B x L x 3
-        w = wp[:, :, 0] + wp[:, :, 1].roll(1, dims=1) + wp[:, :, 2].roll(2, dims=1)
-        # w = wp[:, :, 0]  # B x L
-        # w[:, 1:] += wp[:, :-1, 1]
-        # w[:, 2:] += wp[:, :-2, 2]
+        # w = wp[:, :, 0] + wp[:, :, 1].roll(1, dims=1) + wp[:, :, 2].roll(2, dims=1)
+        w = wp[:, :, 0]  # B x L
+        w[:, 1:] += wp[:, :-1, 1]
+        w[:, 2:] += wp[:, :-2, 2]
 
         return w

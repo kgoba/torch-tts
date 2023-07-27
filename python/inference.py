@@ -9,6 +9,18 @@ from tacotron import build_tacotron
 logger = logging.getLogger(__name__)
 
 
+def run_inference_step(model, text_encoder, batch, device):
+    encoded_text = [text_encoder.encode(text) for text in batch]
+    input = [torch.LongTensor(text) for text in encoded_text]
+    imask = [torch.ones(len(text), dtype=torch.bool) for text in encoded_text]
+    imask = torch.nn.utils.rnn.pad_sequence(imask, batch_first=True)
+    input = torch.nn.utils.rnn.pad_sequence(input, batch_first=True)
+
+    y, s, w = model(input, imask)
+
+    return y.detach(), {"s": s.detach(), "w": w.detach()}
+
+
 def main(args):
     config_path = args.config
 
@@ -38,10 +50,11 @@ def main(args):
     y, s, w = model(input, imask)
 
     from matplotlib import pyplot as plt
+
     plt.subplot(311)
-    plt.imshow(w[0].detach().numpy().T, origin='lower')
+    plt.imshow(w[0].detach().numpy().T, origin="lower")
     plt.subplot(312)
-    plt.imshow(y[0].detach().numpy().T, origin='lower')
+    plt.imshow(y[0].detach().numpy().T, origin="lower")
     plt.subplot(313)
     plt.plot(s[0].detach().numpy())
     plt.grid()
