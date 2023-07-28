@@ -1,8 +1,8 @@
 seed: 42
 
-dataset:
-    root: "../RDH_VL"
-    type: "vl"
+# dataset:
+#     root: "../RDH_VL"
+#     type: "vl"
 
 text:
     alphabet: "# abcdefghijklmnopqrstuvwxyzšžčķģļņ_-:;,.!?()\"'"
@@ -21,10 +21,11 @@ text:
         ["ā", "a_"],
         ["ē", "e_"],
         ["ī", "i_"],
-        ["ū", "u_"]
+        ["ū", "u_"],
+        ["&", "en"]
     ]
-    normalizers: ["lowercase"]
-    bos_symbols: "#"
+    # normalizers: ["lowercase"]
+    bos_symbols: ""
     eos_symbols: "#"
 
 audio:
@@ -38,17 +39,16 @@ audio:
 model:
     encoder:
         dim_emb: 256
-        dim_pre: 128
-        dim_rnn: 128
+        # dim_pre: 128
         dim_out: 256
     decoder:
         r: 3
         dim_pre: 256
         dim_att: 128
-    output:
-        scale: 80
-        ref: -40
+    # output:
+    #     scale: 80
+    #     ref: -40
 
-training:
-    lr: 0.001
-    epochs: 10000
+# training:
+#     lr: 0.001
+#     epochs: 10000

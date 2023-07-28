@@ -1,5 +1,4 @@
 import torch
-import numpy as np
 import yaml, os, sys, logging
 from tqdm.auto import tqdm
 
@@ -30,7 +29,7 @@ def main(args):
         generator=torch.Generator().manual_seed(random_seed),
     )
 
-    print(f"Dataset size: {len(train_dataset)} train + {len(test_dataset)} test")
+    logger.info(f"Dataset size: {len(train_dataset)} train + {len(test_dataset)} test")
 
     train_loader = torch.utils.data.DataLoader(
         train_dataset, shuffle=True, collate_fn=collate_fn, batch_size=64
@@ -43,12 +42,15 @@ def main(args):
     if args.force_cpu:
         device = "cpu"  # set PYTORCH_ENABLE_MPS_FALLBACK=1
 
-    print(f"Using device {device}")
-    print(f"Number of CPUs: {os.cpu_count()}")
+    logger.info(f"Using device {device}")
+    logger.info(f"Number of CPUs: {os.cpu_count()}")
 
     model = build_tacotron(config)
 
-    trainer = Trainer(model, args.checkpoint_dir)
+    if args.lr is not None:
+        trainer = Trainer(model, args.checkpoint_dir, lr=float(args.lr))
+    else:
+        trainer = Trainer(model, args.checkpoint_dir)
 
     trainer.train(train_loader, test_loader, device)
 
@@ -63,6 +65,7 @@ if __name__ == "__main__":
     parser.add_argument("config", help="Configuration file")
     parser.add_argument("--checkpoint_dir", default="checkpoint_default", help="Checkpoint path")
     parser.add_argument("--force_cpu", action="store_true", help="Force using CPU for training")
+    parser.add_argument("--lr", help="Override learning rate")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)

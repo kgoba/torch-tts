@@ -1,7 +1,7 @@
 import torch
 import numpy as np
 from matplotlib import pyplot as plt
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import os
 import logging
 
@@ -38,7 +38,7 @@ def load_state_dict(model, state_dict):
             with torch.no_grad():
                 curr_param.data.copy_(new_param)
         except Exception as e:
-            print(f"Did not set param {key}, skipping ({e})")
+            logger.warning(f"Did not set param {key}, skipping ({e})")
 
 
 def loss_fn(x, y, mask):
@@ -70,12 +70,12 @@ def loss_loop(model, batch_loader, device, num_steps=None, optimizer=None, sched
         model.eval()
 
     if num_steps:
-        pbar = tqdm(enumerate(batch_loader), total=num_steps)
+        pbar = tqdm(batch_loader, total=num_steps)
     else:
-        pbar = tqdm(enumerate(batch_loader))
+        pbar = tqdm(batch_loader)
 
     loss_hist = []
-    for batch_idx, batch in pbar:
+    for idx_step, batch in enumerate(pbar):
         if optimizer is not None:
             optimizer.zero_grad()
         loss, loss_dict = run_training_step(model, batch, device)
@@ -90,7 +90,7 @@ def loss_loop(model, batch_loader, device, num_steps=None, optimizer=None, sched
         pbar.set_postfix_str(
             f"Loss: {loss.item():.3f} (mel: {loss_mel:.3f}), mean: {np.mean(loss_hist):.3f}"
         )
-        if num_steps and batch_idx + 1 >= num_steps:
+        if num_steps and idx_step + 1 >= num_steps:
             break
 
     return loss_hist, loss_dict["w"]
@@ -112,7 +112,7 @@ def optimizer_to(optim, device):
 
 
 class Trainer:
-    def __init__(self, model: torch.nn.Module, checkpoint_dir: str, step: int = 0, lr=3e-4):
+    def __init__(self, model: torch.nn.Module, checkpoint_dir: str, step: int = 0, lr=5e-4):
         self.model = model
         self.checkpoint_dir = checkpoint_dir
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -121,21 +121,22 @@ class Trainer:
         self.lr = lr
 
         self.optimizer = torch.optim.AdamW(
-            model.parameters(), lr=self.lr, amsgrad=True, weight_decay=0.01
+            model.parameters(), lr=self.lr, amsgrad=True, weight_decay=0.03
         )
         # self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=100)
 
         # Print model's state_dict
-        print("Model's state_dict:")
+        logger.debug("Model's state_dict:")
         for param_tensor_name in model.state_dict():
             t = model.state_dict()[param_tensor_name]
             # print(
             #     f"{param_tensor_name}: \t{t.min():.3f} .. {t.max():.3f} avg {t.type(torch.float).mean():.3f} avg abs {t.type(torch.float).abs().mean():.3f}"
             # )
-            print(param_tensor_name, "\t", t.size())
+            logger.debug(param_tensor_name, "\t", t.size())
 
         total_params = sum(p.numel() for p in model.parameters())
-        logging.info(f"Number of parameters: {total_params}")
+        logger.info(f"Number of parameters: {total_params}")
+        logger.info(f"Learning rate: {lr:.1e}")
 
     def save_checkpoint(self, path):
         logger.info(f"Saving checkpoint to {path}")
@@ -165,6 +166,7 @@ class Trainer:
         except:
             logger.warning("Failed to load model properly, attempting to load partially")
             load_state_dict(self.model, checkpoint["model_state"])
+            logger.warning("Optimizer state not restored")
         logger.info(f"Training steps: {self.step}")
 
     def train(self, train_loader, test_loader, device, num_epochs=600):
@@ -186,6 +188,9 @@ class Trainer:
             loss_hist.append([np.mean(epoch_loss), np.mean(epoch_test_loss)])
 
             self.save_checkpoint(self.checkpoint_path)
+            # if self.step % 1000 == 0:
+            #     model_path = os.path.join(self.checkpoint_dir, f"checkpoint_{self.step}.pt")
+            #     self.save_checkpoint(model_path)
 
             alignment_path = os.path.join(self.checkpoint_dir, f"alignment_{self.step}.png")
             fig = plt.figure()

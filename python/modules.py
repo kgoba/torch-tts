@@ -1,7 +1,5 @@
-from typing import List
 import torch
 import torch.nn as nn
-import torch.jit as jit
 
 
 class PreNet(nn.Module):
@@ -108,11 +106,19 @@ class ResGRUCell(nn.GRUCell):
         return x + h, h
 
 
-class ResLSTMCell(jit.ScriptModule):
-    def __init__(self, input_size, hidden_size, dropout=0.0):
+class ResLSTMCell(nn.Module):
+# class ResLSTMCell(nn.RNNCellBase):
+    # def __init__(self, input_size: int, hidden_size: int, bias: bool = True,
+    #              device=None, dtype=None) -> None:
+    #     factory_kwargs = {'device': device, 'dtype': dtype}
+    #     super().__init__(input_size, hidden_size, bias, num_chunks=4, **factory_kwargs)
+
+    def __init__(self, input_size, hidden_size):
         super(ResLSTMCell, self).__init__()
-        self.register_buffer("input_size", torch.Tensor([input_size]))
-        self.register_buffer("hidden_size", torch.Tensor([hidden_size]))
+        # self.register_buffer("input_size", torch.Tensor([input_size]))
+        # self.register_buffer("hidden_size", torch.Tensor([hidden_size]))
+        self.input_size = input_size
+        self.hidden_size = hidden_size
         self.weight_ii = nn.Parameter(torch.randn(3 * hidden_size, input_size))
         self.weight_ic = nn.Parameter(torch.randn(3 * hidden_size, hidden_size))
         self.weight_ih = nn.Parameter(torch.randn(3 * hidden_size, hidden_size))
@@ -123,9 +129,9 @@ class ResLSTMCell(jit.ScriptModule):
         self.bias_hh = nn.Parameter(torch.randn(1 * hidden_size))
         self.weight_ir = nn.Parameter(torch.randn(hidden_size, input_size))
         # self.dropout_layer = nn.Dropout(dropout)
-        self.dropout = dropout
 
-    @jit.script_method
+        self.reset_parameters()
+
     def forward(self, input, hidden):
         # type: (Tensor, Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tuple[Tensor, Tensor]]
         hx, cx = hidden[0].squeeze(0), hidden[1].squeeze(0)
@@ -155,27 +161,6 @@ class ResLSTMCell(jit.ScriptModule):
         else:
             hy = outgate * (ry + torch.mm(input, self.weight_ir.t()))
         return hy, (hy, cy)
-
-
-class ResLSTMLayer(jit.ScriptModule):
-    def __init__(self, input_size, hidden_size, dropout=0.0):
-        super(ResLSTMLayer, self).__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-        # self.cell = LSTMCell(input_size, hidden_size, dropout=0.)
-        self.cell = ResLSTMCell(input_size, hidden_size, dropout=0.0)
-
-    @jit.script_method
-    def forward(self, input, hidden):
-        # type: (Tensor, Tuple[Tensor, Tensor]) -> Tuple[Tensor, Tuple[Tensor, Tensor]]
-        inputs = input.unbind(0)
-        outputs = torch.jit.annotate(List[torch.Tensor], [])
-        for i in range(len(inputs)):
-            out, hidden = self.cell(inputs[i], hidden)
-            outputs += [out]
-        outputs = torch.stack(outputs)
-        print("outputs.size()", outputs.size())
-        return outputs, hidden
 
 
 class PostNet(nn.Module):
@@ -215,7 +200,7 @@ class ContentConcatAttention(ContentAttention):
         self.score_net = nn.Sequential(
             nn.Linear(dim_context + dim_input, dim_hidden, bias=False),
             nn.Tanh(),
-            torch.nn.Linear(dim_hidden, 1, bias=False),
+            nn.Linear(dim_hidden, 1, bias=False),
         )
 
     def forward(self, x, w, context):
@@ -241,24 +226,32 @@ class ContentGeneralAttention(ContentAttention):
 class ContentMarkovAttention(nn.Module):
     def __init__(self, dim_context, dim_input):
         super().__init__()
-        # self.score_net = nn.Linear(dim_input, dim_context)
-        self.prob_scores = nn.Linear(dim_input, 3 * dim_context)
+        self.prob_scores = nn.Linear(dim_input, 3 * dim_context, bias=False)
 
-    def forward(self, x, w, context, cmask):
+    def forward(self, x, w, context, cmask=None):
+        # type: (Tensor, Tensor, Tensor, Optional[Tensor]) -> Tensor
         # x: B x D_input
         # w: B x L
         # context: B x L x D_ctx
         # cmask: B x L
-        x = self.prob_scores(x).view(x.shape[0], -1, 3)  # B x D_ctx x 3
+        x = self.prob_scores(x).tanh()
+        x = x.view(x.shape[0], -1, 3)  # B x D_ctx x 3
         x = torch.bmm(context, x)  # B x L x 3
 
         # mask each probability according to context length per batch item
-        # cmask_extended = torch.stack(
-        #     [torch.ones_like(cmask), cmask & cmask.roll(-1, dims=1), cmask & cmask.roll(-2, dims=1)], dim=2
-        # )
-        # x[~cmask_extended] = -1e12
-        x[:, -1:, 1] = -1e12
-        x[:, -2:, 2] = -1e12
+        if cmask is not None:
+            cmask_extended = torch.stack(
+                [
+                    torch.ones_like(cmask),
+                    cmask & cmask.roll(-1, dims=1),
+                    cmask & cmask.roll(-2, dims=1),
+                ],
+                dim=2,
+            )
+            x[~cmask_extended] = -1e12
+        else:
+            x[:, -1:, 1] = -1e12
+            x[:, -2:, 2] = -1e12
         x = x.softmax(dim=2)
 
         wp = w.unsqueeze(2) * x  # B x L x 3

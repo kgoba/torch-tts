@@ -1,11 +1,10 @@
 from torchaudio.functional import (
     amplitude_to_DB,
     DB_to_amplitude,
-    griffinlim,
     resample,
     vad
 )
-from torchaudio.transforms import MelScale, InverseMelScale, Spectrogram
+from torchaudio.transforms import MelScale, InverseMelScale, Spectrogram, GriffinLim
 
 
 class AudioFrontendConfig:
@@ -45,7 +44,7 @@ class AudioFrontend:
             norm="slaney",
         )
         self.spectrogram = Spectrogram(n_fft=self.n_fft, hop_length=self.hop_length, power=2, normalized=True)
-
+        self.griffinlim = GriffinLim(n_fft=self.n_fft, hop_length=self.hop_length, power=2, momentum=0.9)
     # def spectrogram(self, wave):
     #     x = wave # .numpy()
     #     nperseg=self.n_fft
@@ -63,16 +62,13 @@ class AudioFrontend:
         M = self.stft_to_mels(D)
         D_db = amplitude_to_DB(D, 10, 1e-12, 0)
         M_db = amplitude_to_DB(M, 10, 1e-12, 0)
-        return D_db.T, M_db.T
+        return D_db.mT, M_db.mT
 
     def decode(self, D_db):
-        D = DB_to_amplitude(D_db)
-        return (
-            griffinlim(D, hop_length=self.hop_length, power=1, momentum=0.9),
-            self.config.sample_rate,
-        )
+        D = DB_to_amplitude(D_db, 1, 1)
+        return self.griffinlim(D)
 
     def mel_inv(self, M_db):
-        M = DB_to_amplitude(M_db)
+        M = DB_to_amplitude(M_db.mT, 1, 1)
         D = self.mels_to_stft(M)
-        return amplitude_to_DB(D)
+        return amplitude_to_DB(D, 10, 1e-12, 0)

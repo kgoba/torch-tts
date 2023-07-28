@@ -11,9 +11,10 @@ class Tacotron(nn.Module):
         self.decoder = decoder
 
     def forward(self, cond, cmask, x=None):
+        # type: (Tensor, Tensor, Optional[Tensor]) -> Tuple[Tensor, Tensor, Tensor]
         assert cond.dtype == torch.long
         assert cmask.dtype == torch.bool
-        assert x == None or x.dtype == torch.float32
+        # assert x == None or x.dtype == torch.float32
         memory = self.encoder(cond, cmask)
         return self.decoder(memory, cmask, x)
 

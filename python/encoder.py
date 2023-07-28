@@ -20,7 +20,7 @@ class Encoder(nn.Module):
 
 
 class Encoder2(nn.Module):
-    '''
+    """
     The encoder converts a character sequence into a hidden feature
     representation which the decoder consumes to predict a spectrogram.
     Input characters are represented using a learned 512-dimensional
@@ -28,39 +28,25 @@ class Encoder2(nn.Module):
     tional layers each containing 512 filters with shape 5 × 1, i.e., where
     each filter spans 5 characters, followed by batch normalization [18]
     and ReLU activations. As in Tacotron, these convolutional layers
-    model longer-term context (e.g., N -grams) in the input character
+    model longer-term context (e.g., N-grams) in the input character
     sequence. The output of the final convolutional layer is passed into a
     single bi-directional [19] LSTM [20] layer containing 512 units (256
     in each direction) to generate the encoded features.
-    '''
-    def __init__(self, alphabet_size, dim_out=128, dim_emb=256):
+    """
+
+    def __init__(self, alphabet_size, dim_out=512, dim_emb=512):
         super().__init__()
 
         self.emb = nn.Embedding(alphabet_size, dim_emb, padding_idx=0)
-        self.conv = nn.Sequential()
-        for _ in range(2):
-            self.conv.extend(
-                [
-                    nn.Conv1d(
-                        dim_emb,
-                        dim_emb,
-                        kernel_size=5,
-                        padding=2
-                    ),
-                    nn.BatchNorm1d(dim_emb),
-                    nn.ReLU(),
-                ]
-            )
-        self.conv.extend(
-            [
-                nn.Conv1d(
-                    dim_emb,
-                    dim_emb,
-                    kernel_size=5,
-                    padding=2
-                ),
-                nn.BatchNorm1d(dim_emb),
-            ]
+        self.conv = nn.Sequential(
+            nn.Conv1d(dim_emb, dim_emb, kernel_size=5, padding=2),
+            nn.BatchNorm1d(dim_emb),
+            nn.ReLU(),
+            nn.Conv1d(dim_emb, dim_emb, kernel_size=5, padding=2),
+            nn.BatchNorm1d(dim_emb),
+            nn.ReLU(),
+            nn.Conv1d(dim_emb, dim_emb, kernel_size=5, padding=2),
+            nn.BatchNorm1d(dim_emb),
         )
         self.rnn = nn.LSTM(dim_emb, dim_out // 2, batch_first=True, bidirectional=True)
 
