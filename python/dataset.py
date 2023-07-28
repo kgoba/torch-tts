@@ -23,7 +23,7 @@ class TextEncoder:
         if self.bos:
             text = self.bos + text
         if self.eos:
-            text = text + self.eof
+            text = text + self.eos
         # if text != text_orig:
         #     logger.debug(f"Transformed [{text_orig}] to [{text}]")
         if encode_unk:
