@@ -1,9 +1,4 @@
-from torchaudio.functional import (
-    amplitude_to_DB,
-    DB_to_amplitude,
-    resample,
-    vad
-)
+from torchaudio.functional import amplitude_to_DB, DB_to_amplitude, resample, vad
 from torchaudio.transforms import MelScale, InverseMelScale, Spectrogram, GriffinLim
 
 
@@ -43,8 +38,11 @@ class AudioFrontend:
             f_max=self.config.fmax,
             norm="slaney",
         )
-        self.spectrogram = Spectrogram(n_fft=self.n_fft, hop_length=self.hop_length, power=2, normalized=True)
-        self.griffinlim = GriffinLim(n_fft=self.n_fft, hop_length=self.hop_length, power=2, momentum=0.9)
+        self.spectrogram = Spectrogram(
+            n_fft=self.n_fft, hop_length=self.hop_length, power=2, normalized=True, center=False
+        )
+        self.griffinlim = GriffinLim(n_fft=self.n_fft, hop_length=self.hop_length, power=2)
+
     # def spectrogram(self, wave):
     #     x = wave # .numpy()
     #     nperseg=self.n_fft
@@ -56,9 +54,8 @@ class AudioFrontend:
         if sr != self.config.sample_rate:
             wave = resample(wave, orig_freq=sr, new_freq=self.config.sample_rate)
         # wave = vad(wave, self.config.sample_rate, pre_trigger_time=0.05)
-        wave = vad(wave.flip(0), self.config.sample_rate, pre_trigger_time=0.1).flip(0)
+        # wave = vad(wave.flip(0), self.config.sample_rate, pre_trigger_time=0.1).flip(0)
         D = self.spectrogram(wave)
-        # D = D_cpx.real**2 + D_cpx.imag**2
         M = self.stft_to_mels(D)
         D_db = amplitude_to_DB(D, 10, 1e-12, 0)
         M_db = amplitude_to_DB(M, 10, 1e-12, 0)

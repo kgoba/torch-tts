@@ -1,0 +1,75 @@
+seed: 42
+
+dataset:
+    transcript: "transcripts.txt"
+    utt_id:
+        column: 0
+        re_match: "(.*)"
+        re_path: "\\1.wav"
+        re_id: "\\1"
+    utt_text:
+        column: 1
+
+text:
+    # alphabet: "# abcdefghijklmnopqrstuvwxyzéžčķģļņ_-:;,.!?()\"'"
+    alphabet: "abcdefghijklmnopqrstuvwxyz#-:;,.!?()\"' é"             # nl
+    # alphabet: "#%_abcdefghijklmnopqrstuvwxyz-:;,.!?()\"' ːˈäʒǯšžčķģļņ"  # lv (semiphonemic)
+    character_map: [
+        ["[”“]", "\""],
+        ["[’]", "'"],
+        ["[‐‑‒–—―⁃−]", "-"],
+        ["[…]", "..."],
+        # nl
+        ["[ç]", "c"],
+        ["[àáã]", "a"],
+        ["[èêëé]", "e"],
+        ["[îïï]", "i"],
+        ["[óö]", "o"],
+        ["[úûü]", "u"],
+        ["&", "en"],
+        # en
+        # ["&", "and"],
+        # lv
+        # ["é", "ä"],
+        # ["ā", "aː"],
+        # ["ḗ", "äː"],
+        # ["ē", "eː"],
+        # ["ī", "iː"],
+        # ["ū", "uː"],
+        # ["ō", "oː"],
+        # ["#", ""],
+        # ["\\[~\\]", "%"]
+    ]
+    # normalizers: ["lowercase"]
+    bos_symbols: ""
+    eos_symbols: "#"
+
+audio:
+    sample_rate: 16000
+    hop_length: 0.010
+    win_length: 0.035
+    num_mels: 80
+    fmin: 50
+    fmax: 7600
+
+model:
+    encoder:
+        type: "tacotron2"
+        dim_emb: 256    # 512
+        dim_out: 256    # 512
+    decoder:
+        type: "tacotron2"
+        r: 2            # 1
+        dim_pre: 256
+        dim_att: 256
+        dim_rnn: [512, 512]    # [1024, 1024]
+    postnet:
+        dim_hidden: 256 # 512
+        num_layers: 3
+    # output:
+    #     scale: 80
+    #     ref: -40
+
+# training:
+#     lr: 0.001
+#     epochs: 10000

@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
-from modules import PreNet, CBHG
+from modules.modules import PreNet, CBHG
+from modules.activations import ISRLU
+from mps_fixes.mps_fixes import Conv1dFix
 
 
 class Encoder(nn.Module):
@@ -17,6 +19,35 @@ class Encoder(nn.Module):
         x = self.pre_net(x)  # B x T x D_pre
         x = self.cbhg(x)  # B x T x D_rnn
         return x
+
+
+def reverse_padded(x, x_lengths):
+    x_rev_list = [x_[:x_l].flipud() for x_, x_l in zip(x, x_lengths)]
+    return torch.nn.utils.rnn.pad_sequence(x_rev_list, batch_first=True)
+
+
+class BiDiLSTM(nn.Module):
+    def __init__(self, input_size, hidden_size, batch_first=False, bias=True):
+        super().__init__()
+        self.rnn_f = nn.LSTM(input_size, hidden_size, batch_first=batch_first, bias=bias)
+        self.rnn_b = nn.LSTM(input_size, hidden_size, batch_first=batch_first, bias=bias)
+
+    def forward(self, x, x_lengths):
+        # x: [B, T, input_size]
+        B = x.shape[0]
+        T = x.shape[1]
+        idx = torch.arange(0, T, device=x_lengths.device)
+        mask = idx.unsqueeze(0) >= x_lengths.unsqueeze(1)
+
+        f_h0 = self.rnn_f_h0.expand(-1, B, -1)
+        f_c0 = self.rnn_f_c0.expand(-1, B, -1)
+        b_h0 = self.rnn_b_h0.expand(-1, B, -1)
+        b_c0 = self.rnn_b_c0.expand(-1, B, -1)
+        x_f, (f_hn, _) = self.rnn_f(x, (f_h0, f_c0))  # B x T x D_rnn
+        x_b, (b_hn, _) = self.rnn_b(reverse_padded(x, x_lengths), (b_h0, b_c0))  # B x T x D_rnn
+        x = torch.cat((x_f, reverse_padded(x_b, x_lengths)), dim=2)
+        x.masked_fill_(mask.unsqueeze(2), value=0)
+        return x, torch.cat(f_hn, b_hn, dim=2)
 
 
 class Encoder2(nn.Module):
@@ -37,23 +68,51 @@ class Encoder2(nn.Module):
     def __init__(self, alphabet_size, dim_out=512, dim_emb=512):
         super().__init__()
 
+        self.dim_out = dim_out
         self.emb = nn.Embedding(alphabet_size, dim_emb, padding_idx=0)
         self.conv = nn.Sequential(
-            nn.Conv1d(dim_emb, dim_emb, kernel_size=5, padding=2),
+            Conv1dFix(dim_emb, dim_emb, kernel_size=5, padding=2, bias=False),
             nn.BatchNorm1d(dim_emb),
-            nn.ReLU(),
-            nn.Conv1d(dim_emb, dim_emb, kernel_size=5, padding=2),
+            ISRLU(),  # nn.ReLU(),
+            Conv1dFix(dim_emb, dim_emb, kernel_size=5, padding=2, bias=False),
             nn.BatchNorm1d(dim_emb),
-            nn.ReLU(),
-            nn.Conv1d(dim_emb, dim_emb, kernel_size=5, padding=2),
-            nn.BatchNorm1d(dim_emb),
+            ISRLU(),  # nn.ReLU(),
+            Conv1dFix(dim_emb, dim_emb, kernel_size=5, padding=2, bias=False),
+            nn.BatchNorm1d(dim_emb, affine=False),
         )
-        self.rnn = nn.LSTM(dim_emb, dim_out // 2, batch_first=True, bidirectional=True)
+        # self.upsampler = Upsampler(dim_emb * 2)
 
-    def forward(self, x, xmask):
+        self.rnn_f = nn.LSTM(dim_emb * 2, dim_out // 2, batch_first=True, bias=False)
+        self.rnn_b = nn.LSTM(dim_emb * 2, dim_out // 2, batch_first=True, bias=False)
+
+        self.rnn_f_h0 = nn.Parameter(torch.zeros(1, 1, dim_out // 2))
+        self.rnn_f_c0 = nn.Parameter(torch.zeros(1, 1, dim_out // 2))
+        self.rnn_b_h0 = nn.Parameter(torch.zeros(1, 1, dim_out // 2))
+        self.rnn_b_c0 = nn.Parameter(torch.zeros(1, 1, dim_out // 2))
+
+    def forward(self, x, x_lengths):
         # x = B x T
         x = self.emb(x)  # B x T x D_emb
         xc = self.conv(x.mT).mT
-        x = xc + x
-        x, _ = self.rnn(x)  # B x T x D_rnn
+        # x = xc + x
+        x = torch.cat((xc, x), dim=2)
+
+        # x = self.upsampler(x)
+        # x_lengths = 2 * x_lengths
+
+        B = x.shape[0]
+        T = x.shape[1]
+        idx = torch.arange(0, T, device=x_lengths.device)
+        mask = idx.unsqueeze(0) >= x_lengths.unsqueeze(1)
+
+        f_h0 = self.rnn_f_h0.expand(-1, B, -1)
+        f_c0 = self.rnn_f_c0.expand(-1, B, -1)
+        b_h0 = self.rnn_b_h0.expand(-1, B, -1)
+        b_c0 = self.rnn_b_c0.expand(-1, B, -1)
+        x_f, (f_hn, _) = self.rnn_f(x, (f_h0, f_c0))  # B x T x D_rnn
+        x_b, (b_hn, _) = self.rnn_b(reverse_padded(x, x_lengths), (b_h0, b_c0))  # B x T x D_rnn
+        x = torch.cat((x_f, reverse_padded(x_b, x_lengths)), dim=2)
+        x.masked_fill_(mask.unsqueeze(2), value=0)
+
+        # hn = torch.cat((f_hn, b_hn), dim=2).squeeze(0)
         return x

@@ -4,65 +4,41 @@ import numpy as np
 import h5py
 import os, re, logging
 
+from data.text import TextEncoder, text_has_no_digits
+from data.audio import AudioFrontend, AudioFrontendConfig
+
 logger = logging.getLogger(__name__)
 
 
-class TextEncoder:
-    def __init__(self, alphabet, char_map=None, bos=None, eos=None):
-        self.char_map = dict(char_map) if char_map else dict()
-        self.bos = bos
-        self.eos = eos
-        self.alphabet = alphabet
-        self.lookup = {c: (i + 1) for i, c in enumerate(alphabet)}
-
-    def encode(self, text, encode_unk=None):
-        # text_orig = text
-        text = text.lower()
-        for key, value in self.char_map.items():
-            text = re.sub(key, value, text)
-        if self.bos:
-            text = self.bos + text
-        if self.eos:
-            text = text + self.eos
-        # if text != text_orig:
-        #     logger.debug(f"Transformed [{text_orig}] to [{text}]")
-        if encode_unk:
-            encoded = [self.lookup[c] if c in self.lookup else encode_unk for c in text]
-        else:
-            encoded = [self.lookup[c] for c in text if c in self.lookup]
-            unk_chars = ""
-            for c in text:
-                if not c in self.lookup:
-                    unk_chars += c
-            if unk_chars:
-                logger.warning(f"Unknown characters: {unk_chars}")
-        return encoded
-
-    def decode(self, enc, decode_unk=None):
-        if decode_unk:
-            return [
-                self.alphabet[i - 1] if i > 0 and i <= len(self.alphabet) else decode_unk
-                for i in enc
-            ]
-        else:
-            return [self.alphabet[i - 1] for i in enc if i > 0 and i <= len(self.alphabet)]
-
-
 class TranscribedAudioDataset(torch.utils.data.Dataset):
-    def __init__(self, transcript_path, audio_dir, filename_fn=None, text_filter=None):
-        if filename_fn is None:
-            filename_fn = lambda x: x
+    def __init__(
+        self,
+        transcript_path,
+        audio_dir,
+        utt_id_fn=None,
+        utt_path_fn=None,
+        text_filter=None,
+        id_column=0,
+        text_column=1,
+    ):
+        if utt_path_fn is None:
+            utt_path_fn = lambda x: x
+        if utt_id_fn is None:
+            utt_id_fn = lambda x: x
         if text_filter is None:
             text_filter = lambda x: True
+
         with open(transcript_path) as text_file:
-            lines_split = [line.strip().split("|")[:2] for line in text_file.readlines()]
+            lines_split = [line.strip().split("|") for line in text_file.readlines()]
             self.transcripts = [
                 (
-                    file_id,
+                    utt_id_fn(raw_id),
                     transcript,
-                    os.path.join(audio_dir, filename_fn(file_id)),
+                    os.path.join(audio_dir, utt_path_fn(raw_id)),
                 )
-                for file_id, transcript in lines_split
+                for raw_id, transcript in [
+                    (entry[id_column], entry[text_column]) for entry in lines_split
+                ]
                 if text_filter(transcript)
             ]
 
@@ -80,12 +56,11 @@ class TranscribedAudioDataset(torch.utils.data.Dataset):
 
 
 class TacotronDataset(torch.utils.data.Dataset):
-    def __init__(self, audio_dataset, audio_frontend, text_encoder, cache_path=None, r=1):
+    def __init__(self, audio_dataset, audio_frontend, text_encoder, cache_path=None):
         self.ds = audio_dataset
         self.af = audio_frontend
         self.te = text_encoder
         self.fs = h5py.File(cache_path, "a") if cache_path else None
-        self.r = r
 
     def __len__(self):
         return len(self.ds)
@@ -96,33 +71,43 @@ class TacotronDataset(torch.utils.data.Dataset):
             # D_db = torch.from_numpy(self.fs.get(f"{utt_id}/stft")[()])
             D_db = None
             M_db = torch.from_numpy(self.fs.get(f"{utt_id}/mel")[()])
+            if "text" not in self.fs[utt_id]:
+                print(f"Saving [{utt_id}]={transcript}")
+                self.fs.create_dataset(f"{utt_id}/text", data=transcript)
         else:
             D_db, M_db = self.af.encode(audio, sr)
-            T = (D_db.shape[0] // self.r) * self.r
-            D_db = D_db[:T, :]
-            M_db = M_db[:T, :]
             assert D_db.shape[0] == M_db.shape[0]
 
             if self.fs:
                 # self.fs.create_dataset(f"{utt_id}/stft", data=D_db)
                 self.fs.create_dataset(f"{utt_id}/mel", data=M_db)
+                self.fs.create_dataset(f"{utt_id}/text", data=transcript)
         return utt_id, self.te.encode(transcript), D_db, M_db
 
 
-from audio import AudioFrontend, AudioFrontendConfig
-
-
-def text_has_no_digits(text):
-    return re.search(rf"\d", text) is None
+def regex_replace_fn(x, re_match, re_replace):
+    y = re.sub(f"^{re_match}$", re_replace, x)
+    return y
 
 
 def build_dataset(dataset_path, config, cache_path=None) -> TacotronDataset:
-    # dataset_path = config["dataset"]["root"]
+    dataset_config = config["dataset"]
+
+    utt_path_fn = lambda x: regex_replace_fn(
+        x, dataset_config["utt_id"]["re_match"], dataset_config["utt_id"]["re_path"]
+    )
+    utt_id_fn = lambda x: regex_replace_fn(
+        x, dataset_config["utt_id"]["re_match"], dataset_config["utt_id"]["re_id"]
+    )
+
     audio_dataset = TranscribedAudioDataset(
-        os.path.join(dataset_path, "transcripts.txt"),
+        os.path.join(dataset_path, dataset_config["transcript"]),
         dataset_path,
-        filename_fn=lambda x: x + ".wav",
+        utt_path_fn=utt_path_fn,
+        utt_id_fn=utt_id_fn,
         text_filter=text_has_no_digits,
+        id_column=dataset_config["utt_id"]["column"],
+        text_column=dataset_config["utt_text"]["column"],
     )
 
     audio_config = AudioFrontendConfig()
@@ -141,7 +126,6 @@ def build_dataset(dataset_path, config, cache_path=None) -> TacotronDataset:
         audio_dataset,
         audio_frontend,
         text_encoder,
-        r=config["model"]["decoder"]["r"],
         cache_path=cache_path,
     )
 
@@ -155,17 +139,21 @@ def m_rev(x):
 
 
 def collate_fn(data):
+    # ids = [utt_id for utt_id, _, _, _ in data]
+    # print(ids)
+
     M_db = [m_fwd(M_db) for _, _, _, M_db in data]
     omask = [torch.ones((len(x), 1), dtype=torch.bool) for x in M_db]
     omask = torch.nn.utils.rnn.pad_sequence(omask, batch_first=True)
     M_db = torch.nn.utils.rnn.pad_sequence(M_db, batch_first=True)
 
     input = [torch.LongTensor(input) for _, input, _, _ in data]
+    input_lengths = torch.LongTensor([len(x) for x in input])
     imask = [torch.ones(len(x), dtype=torch.bool) for x in input]
     imask = torch.nn.utils.rnn.pad_sequence(imask, batch_first=True)
     input = torch.nn.utils.rnn.pad_sequence(input, batch_first=True)
 
-    return input, imask, M_db, omask
+    return input, input_lengths, M_db, omask
 
 
 import tqdm

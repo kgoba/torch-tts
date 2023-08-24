@@ -5,6 +5,8 @@ from tqdm.auto import tqdm
 import os
 import logging
 
+from tacotron import run_training_step
+
 logger = logging.getLogger(__name__)
 
 
@@ -41,29 +43,20 @@ def load_state_dict(model, state_dict):
             logger.warning(f"Did not set param {key}, skipping ({e})")
 
 
-def loss_fn(x, y, mask):
-    loss = torch.nn.functional.l1_loss(x, y, reduction="none")
-    # loss = torch.nn.functional.mse_loss(x, y, reduction="none")
-    loss = torch.mean(loss * mask, dim=2)
-    loss = loss.sum() / mask.sum()
-    return loss
-    # return loss.sqrt()
+def grad_norm(model):
+    grads = [param.grad.detach().flatten() for param in model.parameters() if param.grad != None]
+    return torch.cat(grads).norm()
 
 
-def run_training_step(model, batch, device):
-    input, imask, x, xmask = [x.to(device, non_blocking=True) for x in batch]
-    y, s, w = model(input, imask, x)
-    loss_mel = 120 * loss_fn(x, y, xmask)
-    loss_stop = 10 * torch.nn.functional.binary_cross_entropy_with_logits(s, xmask.float())
-    loss = loss_mel + loss_stop
-    return loss, {
-        "loss_mel": loss_mel.detach().item(),
-        "loss_stop": loss_stop.detach().item(),
-        "w": w.detach().cpu(),
-    }
-
-
-def loss_loop(model, batch_loader, device, num_steps=None, optimizer=None, scheduler=None):
+def loss_loop(
+    model,
+    batch_loader,
+    device,
+    num_steps=None,
+    optimizer=None,
+    scheduler=None,
+    optimizer_interval=1,
+):
     if optimizer is not None:
         model.train()
     else:
@@ -76,24 +69,34 @@ def loss_loop(model, batch_loader, device, num_steps=None, optimizer=None, sched
 
     loss_hist = []
     for idx_step, batch in enumerate(pbar):
-        if optimizer is not None:
+        if optimizer != None and (idx_step % optimizer_interval) == 0:
             optimizer.zero_grad()
-        loss, loss_dict = run_training_step(model, batch, device)
-        if optimizer is not None:
-            loss.backward()
-            optimizer.step()
-            if scheduler is not None:
-                scheduler.step()
-        loss_hist.append(loss.item())
 
-        loss_mel = loss_dict["loss_mel"]
+        loss, loss_dict = run_training_step(model, batch, device)
+
+        if optimizer != None:
+            (loss / optimizer_interval).backward()
+            if ((idx_step + 1) % optimizer_interval) == 0:
+                optimizer.step()
+                if scheduler != None:
+                    scheduler.step()
+
+        loss_kl = loss_dict["loss_kl"]
+        loss_mel = loss_dict["loss_mel_db"]
+        loss_mel_post = loss_dict["loss_mel_post_db"]
+        loss_hist.append(loss_mel_post)
         pbar.set_postfix_str(
-            f"Loss: {loss.item():.3f} (mel: {loss_mel:.3f}), mean: {np.mean(loss_hist):.3f}"
+            f"Loss: {loss.item():.4f} (mel: {loss_mel:.3f}/{loss_mel_post:.3f}), kl: {loss_kl:.3f}, mean: {np.mean(loss_hist):.3f}"
         )
         if num_steps and idx_step + 1 >= num_steps:
             break
 
-    return loss_hist, loss_dict["w"]
+        del loss
+
+    if optimizer != None:
+        optimizer.zero_grad()
+
+    return loss_hist, loss_dict
 
 
 def optimizer_to(optim, device):
@@ -120,9 +123,9 @@ class Trainer:
         self.step = step
         self.lr = lr
 
-        self.optimizer = torch.optim.AdamW(
-            model.parameters(), lr=self.lr, amsgrad=True, weight_decay=0.03
-        )
+        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, amsgrad=True)
+        # self.optimizer = torch.optim.NAdam(model.parameters(), lr=self.lr, momentum_decay=0)
+        # self.optimizer = torch.optim.RMSprop(model.parameters(), lr=self.lr)
         # self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=100)
 
         # Print model's state_dict
@@ -159,6 +162,7 @@ class Trainer:
         checkpoint = torch.load(path)
         self.step = checkpoint["step"]
         try:
+            # assert False
             self.model.load_state_dict(checkpoint["model_state"], strict=False)
             self.optimizer.load_state_dict(checkpoint["optimizer_state"])
             for g in self.optimizer.param_groups:
@@ -172,6 +176,7 @@ class Trainer:
     def train(self, train_loader, test_loader, device, num_epochs=600):
         if os.path.exists(self.checkpoint_path):
             self.load_checkpoint(self.checkpoint_path)
+
         pmodel = self.model if device == "cpu" else torch.nn.DataParallel(self.model)
         pmodel.to(device)
 
@@ -180,11 +185,17 @@ class Trainer:
         loss_hist = []
         for epoch_idx in range(num_epochs):
             epoch_loss, _ = loss_loop(
-                pmodel, train_loader, device, optimizer=self.optimizer, num_steps=100
+                pmodel,
+                train_loader,
+                device,
+                optimizer=self.optimizer,
+                num_steps=100,
+                optimizer_interval=4,
             )
             self.step += len(epoch_loss)
 
-            epoch_test_loss, w_test = loss_loop(pmodel, test_loader, device, num_steps=10)
+            with torch.no_grad():
+                epoch_test_loss, loss_dict = loss_loop(pmodel, test_loader, device, num_steps=10)
             loss_hist.append([np.mean(epoch_loss), np.mean(epoch_test_loss)])
 
             self.save_checkpoint(self.checkpoint_path)
@@ -192,10 +203,11 @@ class Trainer:
             #     model_path = os.path.join(self.checkpoint_dir, f"checkpoint_{self.step}.pt")
             #     self.save_checkpoint(model_path)
 
+            w_test = loss_dict["w"]
             alignment_path = os.path.join(self.checkpoint_dir, f"alignment_{self.step}.png")
             fig = plt.figure()
             axes = fig.add_subplot(1, 1, 1)
-            axes.imshow(w_test[0].numpy().T, origin="lower")
+            axes.imshow(np.sqrt(w_test[0].numpy()).T, origin="lower")
             axes.set_title(f"Step: {self.step} | Train loss: {np.mean(epoch_loss):.2f}")
             fig.tight_layout()
             fig.savefig(alignment_path, bbox_inches="tight")
