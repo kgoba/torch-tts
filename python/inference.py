@@ -62,7 +62,9 @@ def main(args):
 
     model.to(device)
 
-    y, extra = run_inference_step(model, text_encoder, [args.text], device, xref=xref)
+    y, extra = run_inference_step(
+        model, text_encoder, [args.text], device, xref=xref, max_steps=args.max_steps
+    )
 
     wave = synth_audio(y, audio_frontend)
 
@@ -71,7 +73,7 @@ def main(args):
 
     if args.play:
         import sounddevice as sd
-        print(wave.shape)
+
         sd.play(wave.numpy().T, audio_config.sample_rate)
         sd.wait()
 
@@ -91,13 +93,13 @@ def main(args):
         # wt_0 = w_0/(1e-6 + w_0.sum(axis=0))
         # zz = np.dot(y[0].numpy().T, wt_0.repeat(2, axis=0))
         # yy = np.dot(w_0.repeat(2, axis=0), zz.T)
-        plt.imshow(np.sqrt(w_0).T, origin="lower")
+        # plt.imshow(np.power(w_0, 0.25).T, origin="lower")
+        plt.imshow(np.where(w_0 > 0.80, 1, 0).T, origin="lower")
         # plt.imshow(yy.T, origin="lower")
         # plt.imshow(cc, origin="lower", aspect=4)
         # plt.imshow(y[0].numpy().T - yy.T, origin="lower")
         # plt.imshow(yy.T, origin="lower")
         plt.subplot(313)
-        print(w_0.shape)
         # t = np.linspace(0, 1, w_0.shape[1])[np.newaxis, :]
         t = np.arange(w_0.shape[1])[np.newaxis, :]
         w_mean = np.sum(w_0 * t, axis=1)
@@ -117,11 +119,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("text", help="Text to synthesise")
     parser.add_argument("config", help="Configuration file")
-    parser.add_argument("--run", default="checkpoint_default", help="Checkpoint path", dest="run_dir")
+    parser.add_argument(
+        "--run", default="checkpoint_default", help="Checkpoint path", dest="run_dir"
+    )
     parser.add_argument("--output", help="Output path")
     parser.add_argument("--ref", help="Reference audio")
     parser.add_argument("--play", action="store_true", help="Play audio")
     parser.add_argument("--plot", action="store_true", help="Show plots")
+    parser.add_argument("--max-steps", type=int, help="Max decoder steps", default=400)
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)

@@ -2,9 +2,10 @@ import torch
 import torchaudio
 import yaml, os, sys, logging
 
-from audio import AudioFrontend, AudioFrontendConfig
+from data.audio import AudioFrontend, AudioFrontendConfig
 
 logger = logging.getLogger(__name__)
+
 
 def main(args):
     config_path = args.config
@@ -29,9 +30,16 @@ def main(args):
     wave = wave / wave.abs().max()
 
     if args.audio_out:
-        torchaudio.save(args.audio_out, wave, audio_config.sample_rate)
+        torchaudio.save(
+            args.audio_out,
+            wave.unsqueeze(0),
+            audio_config.sample_rate,
+            encoding="PCM_S",
+            bits_per_sample=16,
+        )
     else:
         import sounddevice as sd
+
         print(wave.shape)
         sd.play(wave.numpy().T, audio_config.sample_rate)
         sd.wait()

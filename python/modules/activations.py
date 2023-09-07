@@ -2,6 +2,10 @@ import torch
 import torch.nn as nn
 
 
+def isru_sigmoid(x):
+    return (1 + isru(x / 2, 1)) / 2
+
+
 def isru(x, alpha=1):
     return x / torch.sqrt(1 + alpha * (x * x))
 

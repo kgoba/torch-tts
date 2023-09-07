@@ -85,9 +85,40 @@ class TacotronDataset(torch.utils.data.Dataset):
         return utt_id, self.te.encode(transcript), D_db, M_db
 
 
+class TacotronDatasetHDF5(torch.utils.data.Dataset):
+    def __init__(self, data_path, text_encoder):
+        self.te = text_encoder
+        self.fs = h5py.File(data_path, "r")
+        self.utt_ids = list(self.fs.keys())
+
+    def __len__(self):
+        return len(self.utt_ids)
+
+    def __getitem__(self, index):
+        utt_id = self.utt_ids[index]
+        D_db = None
+        M_db = torch.from_numpy(self.fs.get(f"{utt_id}/mel")[()])
+        transcript = self.fs.get(f"{utt_id}/text").asstr()[()]
+        return utt_id, self.te.encode(transcript), D_db, M_db
+
+
 def regex_replace_fn(x, re_match, re_replace):
     y = re.sub(f"^{re_match}$", re_replace, x)
     return y
+
+
+def build_dataset_hdf5(dataset_path, config) -> TacotronDatasetHDF5:
+    text_config = config["text"]
+    text_encoder = TextEncoder(
+        text_config["alphabet"],
+        text_config.get("character_map"),
+        bos=text_config.get("bos_symbols"),
+        eos=text_config.get("eos_symbols"),
+    )
+    return TacotronDatasetHDF5(
+        dataset_path,
+        text_encoder,
+    )
 
 
 def build_dataset(dataset_path, config, cache_path=None) -> TacotronDataset:
@@ -113,8 +144,8 @@ def build_dataset(dataset_path, config, cache_path=None) -> TacotronDataset:
     audio_config = AudioFrontendConfig()
     audio_config.from_json(config["audio"])
     audio_frontend = AudioFrontend(audio_config)
-    text_config = config["text"]
 
+    text_config = config["text"]
     text_encoder = TextEncoder(
         text_config["alphabet"],
         text_config.get("character_map"),
@@ -143,17 +174,14 @@ def collate_fn(data):
     # print(ids)
 
     M_db = [m_fwd(M_db) for _, _, _, M_db in data]
-    omask = [torch.ones((len(x), 1), dtype=torch.bool) for x in M_db]
-    omask = torch.nn.utils.rnn.pad_sequence(omask, batch_first=True)
+    output_lengths = torch.LongTensor([len(x) for x in M_db])
     M_db = torch.nn.utils.rnn.pad_sequence(M_db, batch_first=True)
 
     input = [torch.LongTensor(input) for _, input, _, _ in data]
     input_lengths = torch.LongTensor([len(x) for x in input])
-    imask = [torch.ones(len(x), dtype=torch.bool) for x in input]
-    imask = torch.nn.utils.rnn.pad_sequence(imask, batch_first=True)
     input = torch.nn.utils.rnn.pad_sequence(input, batch_first=True)
 
-    return input, input_lengths, M_db, omask
+    return input, input_lengths, M_db, output_lengths
 
 
 import tqdm

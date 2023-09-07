@@ -58,7 +58,7 @@ class ReferenceEncoder(nn.Module):
 
         x, (hn, cn) = self.rnn(x)  # [B, T, dim_rnn]
         # x = x.mean(axis=1)  # [B, dim_rnn]
-        return hn.squeeze(0)
+        return x # , hn.squeeze(0)
 
 
 class ReferenceEncoderVAE(nn.Module):
@@ -72,5 +72,8 @@ class ReferenceEncoderVAE(nn.Module):
 
     def forward(self, x, x_lengths=None):
         x = self.encoder(x, x_lengths)
+        x = torch.index_select(x, dim=1, index=x_lengths - 1)
+        x = x[:, 0, :]
+        # x = x.mean(axis=1)
         x, kl_loss = self.vae(x)
         return x, kl_loss

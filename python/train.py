@@ -3,14 +3,13 @@ import yaml, os, sys, logging
 from tqdm.auto import tqdm
 
 from train_util import find_available_device, Trainer
-from data.dataset import collate_fn, build_dataset
+from data.dataset import collate_fn, build_dataset_hdf5
 from tacotron import build_tacotron
 
 logger = logging.getLogger(__name__)
 
 
 def main(args):
-    dataset_path = args.dataset
     config_path = args.config
 
     test_size = 200
@@ -20,7 +19,8 @@ def main(args):
 
     torch.random.manual_seed(142)
 
-    dataset = build_dataset(dataset_path, config, args.data_path)
+    dataset = build_dataset_hdf5(args.dataset, config)
+    # dataset = build_dataset(args.dataset, config, args.data_path)
     # check_dataset_stats(audio_dataset)
 
     train_dataset, test_dataset = torch.utils.data.random_split(
@@ -32,7 +32,7 @@ def main(args):
     logger.info(f"Dataset size: {len(train_dataset)} train + {len(test_dataset)} test")
 
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, shuffle=True, collate_fn=collate_fn, batch_size=20
+        train_dataset, shuffle=True, collate_fn=collate_fn, batch_size=32
     )
     test_loader = torch.utils.data.DataLoader(
         test_dataset, shuffle=False, collate_fn=collate_fn, batch_size=16

@@ -19,11 +19,16 @@ class LSTMZoneoutCell(nn.LSTMCell):
 
     def forward(self, x, hidden):
         h, c = super().forward(x, hidden)
-        if self.p_zoneout and self.training:
-            zoneout_h = torch.rand(self.hidden_size, device=h.device) < self.p_zoneout
-            zoneout_c = torch.rand(self.hidden_size, device=c.device) < self.p_zoneout
-            h = torch.where(zoneout_h, hidden[0], h)
-            c = torch.where(zoneout_c, hidden[1], c)
+        if self.training:
+            if self.p_zoneout:
+                zoneout_h = torch.rand(self.hidden_size, device=h.device) < self.p_zoneout
+                zoneout_c = torch.rand(self.hidden_size, device=c.device) < self.p_zoneout
+                h = torch.where(zoneout_h, hidden[0], h)
+                c = torch.where(zoneout_c, hidden[1], c)
+        else:
+            h = self.p_zoneout * hidden[0] + (1. - self.p_zoneout) * h
+            c = self.p_zoneout * hidden[1] + (1. - self.p_zoneout) * c
+            pass
         return h, c
 
 

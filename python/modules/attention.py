@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-
+from modules.activations import isru_sigmoid
 
 # class ContentAttention(nn.Module):
 #     """Based on Luong, M. T., Pham, H., & Manning, C. D. (2015). Effective approaches to attention-based neural machine translation. arXiv preprint arXiv:1508.04025.
@@ -94,10 +94,11 @@ class ContentMarkovAttention(nn.Module):
 
 
 class StepwiseMonotonicAttention(nn.Module):
-    def __init__(self, dim_context, dim_input, sigmoid_noise=1.0):
+    def __init__(self, dim_context, dim_input, sigmoid_noise=2.):
         super().__init__()
         self.sigmoid_noise = sigmoid_noise
-        self.query_layer = nn.Linear(dim_input, dim_context)
+        self.query_layer = nn.Linear(dim_input, dim_context, bias=False)
+        self.bias = nn.Parameter(torch.Tensor([1.]))
         # self.v = nn.Linear(dim_context, 1, bias=False)
 
     def forward(self, x, w, context, cmask=None):
@@ -105,6 +106,8 @@ class StepwiseMonotonicAttention(nn.Module):
         # e = self.v(torch.tanh(q.unsqueeze(1) + context))
         e = torch.bmm(context, q.unsqueeze(2))
         e = e.squeeze(2)
+        e = e + self.bias
+        # print(context.mean(), x.mean(), q.mean(), e.mean())
 
         if self.training:
             e += self.sigmoid_noise * torch.randn_like(e)
@@ -112,8 +115,8 @@ class StepwiseMonotonicAttention(nn.Module):
         if cmask is not None:
             e.masked_fill_(~cmask, -1e12)
 
-        e[:, -1:] = 20
-        p0 = e.sigmoid()
+        e[:, -1] = 1e12
+        p0 = isru_sigmoid(e) # e.sigmoid()
         w0 = w * p0
         w1 = w * (1 - p0)
 

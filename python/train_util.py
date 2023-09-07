@@ -4,6 +4,7 @@ from matplotlib import pyplot as plt
 from tqdm.auto import tqdm
 import os
 import logging
+import gc
 
 from tacotron import run_training_step
 
@@ -92,6 +93,8 @@ def loss_loop(
             break
 
         del loss
+        gc.collect()
+        torch.mps.empty_cache()
 
     if optimizer != None:
         optimizer.zero_grad()
@@ -207,7 +210,7 @@ class Trainer:
             alignment_path = os.path.join(self.checkpoint_dir, f"alignment_{self.step}.png")
             fig = plt.figure()
             axes = fig.add_subplot(1, 1, 1)
-            axes.imshow(np.sqrt(w_test[0].numpy()).T, origin="lower")
+            axes.imshow(np.power(w_test[0].numpy(), 0.25).T, origin="lower")
             axes.set_title(f"Step: {self.step} | Train loss: {np.mean(epoch_loss):.2f}")
             fig.tight_layout()
             fig.savefig(alignment_path, bbox_inches="tight")

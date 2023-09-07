@@ -68,14 +68,14 @@ class Taco2DecoderCell(nn.Module):
 
         self.pre_net = PreNet(dim_mel, dim_pre, always_dropout=True, p_dropout=0.5)
         # self.attention_module = ContentMarkovAttention(dim_ctx, dim_att)
-        self.attention_module = StepwiseMonotonicAttention(dim_ctx, dim_rnn[0])
+        self.attention_module = StepwiseMonotonicAttention(dim_ctx, dim_rnn[0] + dim_rnn[1])
         # self.attention_fc = nn.Linear(dim_rnn[0], dim_att)
 
-        rnn_dims = [dim_pre + dim_ctx] + dim_rnn
+        rnn_dims = [dim_pre] + dim_rnn
         rnn_dims_zipped = zip(rnn_dims[:-1], rnn_dims[1:])
         self.decoder_rnn_list = nn.ModuleList(
             [
-                LSTMZoneoutCell(dim_in, dim_hidden, p_zoneout=p_zoneout)
+                LSTMZoneoutCell(dim_in + dim_ctx, dim_hidden, p_zoneout=p_zoneout)
                 for dim_in, dim_hidden in rnn_dims_zipped
             ]
         )
@@ -109,17 +109,17 @@ class Taco2DecoderCell(nn.Module):
 
         ctx_att = torch.bmm(w.unsqueeze(1), memory).squeeze(1)  # B x D_ctx
 
-        x_dec = torch.cat((x_pre, ctx_att), dim=1)  # B x (D_pre+D_ctx)
+        x_dec = x_pre
         for idx, rnn in enumerate(self.decoder_rnn_list):
-            # x_dec = torch.cat((x_dec, ctx_att), dim=1)
+            x_dec = torch.cat((x_dec, ctx_att), dim=1)
             h_dec[idx] = rnn(x_dec, h_dec[idx])  # B x D_rnn
             # x_dec = torch.cat((h_dec[idx][0], ctx_att), dim=1)
             x_dec = h_dec[idx][0]
 
-        x_att = h_dec[0][0] # isru(self.attention_fc(h_dec[0][0]))
+        x_att = torch.cat([h_dec[-1][0], h_dec[0][0]], dim=1) # isru(self.attention_fc(h_dec[0][0]))
         w = self.attention_module(x_att, w, memory, mmask)  # B x L
 
-        x_dec = torch.cat((x_dec, torch.zeros_like(ctx_att), torch.zeros_like(x_pre)), dim=1)
+        x_dec = torch.cat((x_dec, ctx_att, torch.zeros_like(x_pre)), dim=1)
         # x_dec = torch.cat((x_dec, x_pre), dim=1)
 
         dec_state = w, h_dec

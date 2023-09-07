@@ -3,20 +3,19 @@ import torch.nn as nn
 
 
 class Decoder(nn.Module):
-    def __init__(self, decoder_cell, r, dim_mel, prenet=None, max_steps=200, stop_threshold=-2):
+    def __init__(self, decoder_cell, r, dim_mel, prenet=None, stop_threshold=-2):
         super().__init__()
         self.decoder_cell = decoder_cell
         self.prenet = prenet
-        self.max_steps = max_steps
         self.stop_threshold = stop_threshold
         self.r = r
         self.dim_mel = dim_mel
 
         self.fc_mel = nn.Linear(decoder_cell.dim_output, self.r * self.dim_mel)
         self.fc_stop = nn.Linear(decoder_cell.dim_output, self.r)
-        self.p_no_forcing = 0
+        self.p_no_forcing = 0.1
 
-    def forward(self, memory, mmask, x):
+    def forward(self, memory, mmask, x, max_steps: int = 0):
         # type: (Tensor, Tensor, Optional[Tensor]) -> Tuple[Tensor, Tensor, Tensor]
         # memory: B x L x D_enc
         # x:      B x T x D_mel
@@ -61,7 +60,7 @@ class Decoder(nn.Module):
                 if not self.p_no_forcing or torch.rand(1) > self.p_no_forcing:
                     y_t = x_split[step - 1]  # B x r x D_mel
             else:
-                if torch.any(s_t < self.stop_threshold) or step > self.max_steps:
+                if torch.any(s_t < self.stop_threshold) or (max_steps and step > max_steps):
                     break
 
         y = torch.cat(y, dim=1)  # B x T x D_mel
