@@ -1,6 +1,5 @@
 import torch
 import torchaudio
-import numpy as np
 import h5py
 import os, re, logging
 
@@ -86,10 +85,11 @@ class TacotronDataset(torch.utils.data.Dataset):
 
 
 class TacotronDatasetHDF5(torch.utils.data.Dataset):
-    def __init__(self, data_path, text_encoder):
+    def __init__(self, data_path, text_encoder, max_frames=None):
         self.te = text_encoder
         self.fs = h5py.File(data_path, "r")
         self.utt_ids = list(self.fs.keys())
+        self.max_frames = max_frames
 
     def __len__(self):
         return len(self.utt_ids)
@@ -99,6 +99,8 @@ class TacotronDatasetHDF5(torch.utils.data.Dataset):
         D_db = None
         M_db = torch.from_numpy(self.fs.get(f"{utt_id}/mel")[()])
         transcript = self.fs.get(f"{utt_id}/text").asstr()[()]
+        if self.max_frames:
+            M_db = M_db[: self.max_frames, :]
         return utt_id, self.te.encode(transcript), D_db, M_db
 
 
@@ -107,7 +109,7 @@ def regex_replace_fn(x, re_match, re_replace):
     return y
 
 
-def build_dataset_hdf5(dataset_path, config) -> TacotronDatasetHDF5:
+def build_dataset_hdf5(dataset_path, config, max_frames=None) -> TacotronDatasetHDF5:
     text_config = config["text"]
     text_encoder = TextEncoder(
         text_config["alphabet"],
@@ -115,10 +117,7 @@ def build_dataset_hdf5(dataset_path, config) -> TacotronDatasetHDF5:
         bos=text_config.get("bos_symbols"),
         eos=text_config.get("eos_symbols"),
     )
-    return TacotronDatasetHDF5(
-        dataset_path,
-        text_encoder,
-    )
+    return TacotronDatasetHDF5(dataset_path, text_encoder, max_frames=max_frames)
 
 
 def build_dataset(dataset_path, config, cache_path=None) -> TacotronDataset:
@@ -170,8 +169,7 @@ def m_rev(x):
 
 
 def collate_fn(data):
-    # ids = [utt_id for utt_id, _, _, _ in data]
-    # print(ids)
+    ids = [utt_id for utt_id, _, _, _ in data]
 
     M_db = [m_fwd(M_db) for _, _, _, M_db in data]
     output_lengths = torch.LongTensor([len(x) for x in M_db])
@@ -181,35 +179,4 @@ def collate_fn(data):
     input_lengths = torch.LongTensor([len(x) for x in input])
     input = torch.nn.utils.rnn.pad_sequence(input, batch_first=True)
 
-    return input, input_lengths, M_db, output_lengths
-
-
-import tqdm
-
-
-def check_dataset_stats(dataset, sample_size=500):
-    print(f"Dataset size: {len(dataset)}")
-    sample, _ = torch.utils.data.random_split(
-        dataset,
-        [sample_size, len(dataset) - sample_size],
-        generator=torch.Generator().manual_seed(142),
-    )
-    utt_len = []
-    audio_len = []
-    audio_pwr = []
-    for i in tqdm(range(len(sample))):
-        utt_id, transcript, audio, sr = dataset[i]
-        utt_len.append(len(transcript))
-        audio_len.append(len(audio) / sr)
-        audio_pwr.append(10 * np.log10(np.mean(audio.numpy() ** 2)))
-
-    print(
-        f"Utterance length: {np.median(utt_len):.1f} (median), {np.quantile(utt_len, 0.05):.1f}..{np.quantile(utt_len, 0.95):.1f} (5%..95%) characters"
-    )
-    print(
-        f"Audio length:     {np.median(audio_len):.1f} (median), {np.quantile(audio_len, 0.05):.1f}..{np.quantile(audio_len, 0.95):.1f} (5%..95%) s"
-    )
-    print(
-        f"Audio RMS power:  {np.median(audio_pwr):.1f} (median), {np.quantile(audio_pwr, 0.05):.1f}..{np.quantile(audio_pwr, 0.95):.1f} (5%..95%) dBFS"
-    )
-    print(f"Total audio length: {len(dataset) * np.mean(audio_len) / 3600:.1f} h (estimated)")
+    return ids, input, input_lengths, M_db, output_lengths

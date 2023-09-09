@@ -107,6 +107,9 @@ class Taco2DecoderCell(nn.Module):
 
         x_pre = self.pre_net(x.flatten(1, 2))  # B x D_pre
 
+        # sharpen attention weights
+        # w_adj = torch.pow(w, 1)
+        # w_adj = w_adj / (1e-6 + w_adj.sum(dim=1).unsqueeze(1))
         ctx_att = torch.bmm(w.unsqueeze(1), memory).squeeze(1)  # B x D_ctx
 
         x_dec = x_pre

@@ -15,8 +15,7 @@ class Decoder(nn.Module):
         self.fc_stop = nn.Linear(decoder_cell.dim_output, self.r)
         self.p_no_forcing = 0.1
 
-    def forward(self, memory, mmask, x, max_steps: int = 0):
-        # type: (Tensor, Tensor, Optional[Tensor]) -> Tuple[Tensor, Tensor, Tensor]
+    def forward(self, memory, mmask, x=None, max_steps: int = 0):
         # memory: B x L x D_enc
         # x:      B x T x D_mel
         B = memory.shape[0]  # batch size
@@ -44,9 +43,10 @@ class Decoder(nn.Module):
             d_t, c_t, state_t = self.decoder_cell(y_t, state_t, memory, mmask)
             # d_t = d_t.detach()
 
-            w_t = state_t[0] # B x L
+            w_t = state_t[0]  # B x L
             s_t = self.fc_stop(d_t).unsqueeze(2)  # B x r x 1
-            y_t = self.fc_mel(d_t).view(-1, self.r, self.dim_mel)  # B x r x D_mel
+            y_t = nn.functional.leaky_relu(self.fc_mel(d_t), 0.01)
+            y_t = y_t.view(-1, self.r, self.dim_mel)  # B x r x D_mel
 
             y.append(y_t)
             s.append(s_t)
@@ -60,7 +60,7 @@ class Decoder(nn.Module):
                 if not self.p_no_forcing or torch.rand(1) > self.p_no_forcing:
                     y_t = x_split[step - 1]  # B x r x D_mel
             else:
-                if torch.any(s_t < self.stop_threshold) or (max_steps and step > max_steps):
+                if torch.any(s_t < self.stop_threshold) or (max_steps and (step > max_steps)):
                     break
 
         y = torch.cat(y, dim=1)  # B x T x D_mel

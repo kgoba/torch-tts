@@ -176,7 +176,7 @@ class Trainer:
             logger.warning("Optimizer state not restored")
         logger.info(f"Training steps: {self.step}")
 
-    def train(self, train_loader, test_loader, device, num_epochs=600):
+    def train(self, train_loader, test_loader, device, num_epochs=600, optimizer_interval=1):
         if os.path.exists(self.checkpoint_path):
             self.load_checkpoint(self.checkpoint_path)
 
@@ -193,7 +193,7 @@ class Trainer:
                 device,
                 optimizer=self.optimizer,
                 num_steps=100,
-                optimizer_interval=4,
+                optimizer_interval=optimizer_interval,
             )
             self.step += len(epoch_loss)
 

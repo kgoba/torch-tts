@@ -33,7 +33,16 @@ class Tacotron(nn.Module):
         self.postnet = postnet
         self.apply(weights_init)
 
-    def forward(self, cond, cond_lengths, x=None, x_lengths=None, xref=None, xref_lengths=None, max_steps: int = 0):
+    def forward(
+        self,
+        cond,
+        cond_lengths,
+        x=None,
+        x_lengths=None,
+        xref=None,
+        xref_lengths=None,
+        max_steps: int = 0,
+    ):
         assert cond.dtype == torch.long
         assert cond_lengths.dtype == torch.long
         # assert x == None or x.dtype == torch.float32
@@ -55,7 +64,11 @@ class Tacotron(nn.Module):
 
 
 def loss_fn(y, x, mask=None, order=1):
-    if order == 1:
+    if order == 0:
+        loss = y - x
+        loss = torch.where(loss > 0, loss, -loss)
+        loss = loss * x
+    elif order == 1:
         loss = torch.nn.functional.l1_loss(x, y, reduction="none")
     else:
         loss = torch.nn.functional.mse_loss(x, y, reduction="none")
@@ -71,28 +84,23 @@ def loss_fn(y, x, mask=None, order=1):
 
 def alignment_loss(w):
     D = w.shape[2]
-    # t = torch.linspace(0, 1, D).unsqueeze(0).unsqueeze(0).to(device=w.device)
     t = torch.arange(D).unsqueeze(0).unsqueeze(0).to(device=w.device)
-    w_std = (torch.sum(w * t.square(), axis=2) - torch.sum(w * t, axis=2).square())
-    loss = torch.maximum(w_std, 1e-2 * torch.ones_like(w_std)) # .sqrt()
-    return loss
+    w_var = torch.sum(w * t.square(), axis=2) - torch.sum(w * t, axis=2).square()
+    w_std = torch.maximum(w_var, 1e-6 * torch.ones_like(w_var)).sqrt()
+    return w_std
 
 
 def run_training_step(model, batch, device):
-    c, c_lengths, x, x_lengths = [t.to(device) for t in batch]
+    c, c_lengths, x, x_lengths = [t.to(device) for t in batch if isinstance(t, torch.Tensor)]
 
-    x_lengths = torch.clamp(x_lengths, max=1000)
     xmask = lengths_to_mask(x_lengths).unsqueeze(2)
-
-    T = xmask.shape[1]
-    x = x[:, :T, :]
 
     y, y_post, s, out_dict = model(c, c_lengths, x, x_lengths, xref=x, xref_lengths=x_lengths)
     T = y.shape[1]
     x, xmask = x[:, :T, :], xmask[:, :T]
 
-    loss_mel = loss_fn(y, x, xmask, order=2)
-    loss_mel_post = loss_fn(y_post, x, xmask, order=2)
+    loss_mel = loss_fn(y, x, xmask, order=0)
+    loss_mel_post = loss_fn(y_post, x, xmask, order=0)
 
     pos_weight = torch.Tensor([0.1]).to(device=s.device)
     loss_stop = torch.nn.functional.binary_cross_entropy_with_logits(
@@ -100,8 +108,8 @@ def run_training_step(model, batch, device):
     )
 
     loss = 0.8 * loss_mel + 0.2 * loss_mel_post + 0.1 * loss_stop
-    loss += 0.0002 * out_dict["kl_loss"]
-    loss += 0.0005 * alignment_loss(out_dict["w"]).mean()
+    # loss += 0.0002 * out_dict["kl_loss"]
+    # loss += 0.0002 * alignment_loss(out_dict["w"]).mean()
 
     return loss, {
         "loss_mel_db": 120 * (loss_mel.item()),
@@ -121,7 +129,9 @@ def run_inference_step(model, text_encoder, batch, device, xref=None, max_steps=
         xref_lengths = torch.LongTensor([len(x) for x in xref]) if xref != None else None
 
         # input = input.to(device, non_blocking=True)
-        y, y_post, s, out_dict = model(input, input_lengths, xref=xref, xref_lengths=xref_lengths, max_steps=max_steps)
+        y, y_post, s, out_dict = model(
+            input, input_lengths, xref=xref, xref_lengths=xref_lengths, max_steps=max_steps
+        )
 
         # model_traced = torch.jit.trace(model, (input, imask)) # Export to TorchScript
         return y_post.detach().cpu(), {"s": s.detach().cpu(), "w": out_dict["w"].detach().cpu()}
@@ -173,7 +183,7 @@ def build_tacotron(config):
     else:
         postnet = None
 
-    refencoder = ReferenceEncoderVAE(audio_config["num_mels"], dim_conv=[256, 256], dim_out=16)
-    # refencoder = None
+    # refencoder = ReferenceEncoderVAE(audio_config["num_mels"], dim_conv=[256, 256], dim_out=16)
+    refencoder = None
 
     return Tacotron(encoder, decoder, postnet=postnet, refencoder=refencoder)

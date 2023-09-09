@@ -53,8 +53,10 @@ class AudioFrontend:
     def encode(self, wave, sr):
         if sr != self.config.sample_rate:
             wave = resample(wave, orig_freq=sr, new_freq=self.config.sample_rate)
-        # wave = vad(wave, self.config.sample_rate, pre_trigger_time=0.05)
-        # wave = vad(wave.flip(0), self.config.sample_rate, pre_trigger_time=0.1).flip(0)
+        wave = wave / wave.abs().max()
+        wave = vad(wave, self.config.sample_rate, pre_trigger_time=0.05)
+        wave = vad(wave.flip(0), self.config.sample_rate, pre_trigger_time=0.1).flip(0)
+        wave = wave / wave.abs().max()
         D = self.spectrogram(wave)
         M = self.stft_to_mels(D)
         D_db = amplitude_to_DB(D, 10, 1e-12, 0)
