@@ -2,9 +2,10 @@ import torch
 import torch.nn as nn
 from modules.modules import PreNet, CBHG
 from modules.activations import ISRLU
-from modules.rnn import reverse_padded, BiDiLSTMSplit, BiDiLSTMStandard
+from modules.attention import MultiHeadAttention
+from modules.rnn import reverse_padded, BiDiLSTM, BiDiLSTMSplit
 from mps_fixes.mps_fixes import Conv1dFix
-
+from data.util import lengths_to_mask
 
 class Encoder(nn.Module):
     def __init__(self, alphabet_size, dim_out=256, dim_emb=256):
@@ -41,26 +42,26 @@ class Encoder2(nn.Module):
         super().__init__()
 
         self.dim_out = dim_out
+        self.dim_emb = dim_emb
         self.emb = nn.Embedding(alphabet_size, dim_emb, padding_idx=0)
         self.conv = nn.Sequential(
-            Conv1dFix(dim_emb, dim_emb, kernel_size=5, padding=2, bias=False),
+            nn.Conv1d(dim_emb, dim_emb, kernel_size=5, padding=2, bias=False),
             nn.BatchNorm1d(dim_emb),
-            ISRLU(),  # nn.ReLU(),
-            Conv1dFix(dim_emb, dim_emb, kernel_size=5, padding=2, bias=False),
+            ISRLU(),
+            nn.Conv1d(dim_emb, dim_emb, kernel_size=5, padding=2, bias=False),
             nn.BatchNorm1d(dim_emb),
-            ISRLU(),  # nn.ReLU(),
-            Conv1dFix(dim_emb, dim_emb, kernel_size=5, padding=2, bias=False),
+            ISRLU(),
+            nn.Conv1d(dim_emb, dim_emb, kernel_size=5, padding=2, bias=False),
             nn.BatchNorm1d(dim_emb, affine=False),
+            ISRLU(),
         )
-        # self.upsampler = Upsampler(dim_emb * 2)
+        # self.ln = nn.LayerNorm([self.dim_emb])
 
-        self.rnn_f = nn.LSTM(dim_emb * 2, dim_out // 2, batch_first=True, bias=False)
-        self.rnn_b = nn.LSTM(dim_emb * 2, dim_out // 2, batch_first=True, bias=False)
+        self.rnn = BiDiLSTMSplit(dim_emb * 2, dim_out // 2, bias=False)
+        self.rnn_h0 = nn.Parameter(torch.zeros(1, 1, dim_out))
+        self.rnn_c0 = nn.Parameter(torch.zeros(1, 1, dim_out))
 
-        self.rnn_f_h0 = nn.Parameter(torch.zeros(1, 1, dim_out // 2))
-        self.rnn_f_c0 = nn.Parameter(torch.zeros(1, 1, dim_out // 2))
-        self.rnn_b_h0 = nn.Parameter(torch.zeros(1, 1, dim_out // 2))
-        self.rnn_b_c0 = nn.Parameter(torch.zeros(1, 1, dim_out // 2))
+        # self.mha = MultiHeadAttention(dim_out, dim_out, dim_out, num_heads=8)
 
     def forward(self, x, x_lengths):
         # x = B x T
@@ -68,23 +69,13 @@ class Encoder2(nn.Module):
         xc = self.conv(x.mT).mT
         # x = xc + x
         x = torch.cat((xc, x), dim=2)
-
-        # x = self.upsampler(x)
-        # x_lengths = 2 * x_lengths
+        x = nn.functional.dropout(x, p=0.1, training=self.training)
 
         B = x.shape[0]
-        T = x.shape[1]
-        idx = torch.arange(0, T, device=x_lengths.device)
-        mask = idx.unsqueeze(0) >= x_lengths.unsqueeze(1)
+        h0 = self.rnn_h0.expand(-1, B, -1)
+        c0 = self.rnn_c0.expand(-1, B, -1)
+        x, hn = self.rnn(x, x_lengths, h0, c0)
 
-        f_h0 = self.rnn_f_h0.expand(-1, B, -1)
-        f_c0 = self.rnn_f_c0.expand(-1, B, -1)
-        b_h0 = self.rnn_b_h0.expand(-1, B, -1)
-        b_c0 = self.rnn_b_c0.expand(-1, B, -1)
-        x_f, (f_hn, _) = self.rnn_f(x, (f_h0, f_c0))  # B x T x D_rnn
-        x_b, (b_hn, _) = self.rnn_b(reverse_padded(x, x_lengths), (b_h0, b_c0))  # B x T x D_rnn
-        x = torch.cat((x_f, reverse_padded(x_b, x_lengths)), dim=2)
-        x.masked_fill_(mask.unsqueeze(2), value=0)
-
-        # hn = torch.cat((f_hn, b_hn), dim=2).squeeze(0)
+        # x_mask = lengths_to_mask(x_lengths)
+        # x = x + self.mha(x, x, x_mask)
         return x

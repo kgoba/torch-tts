@@ -2,8 +2,9 @@ import torch
 import torchaudio
 import h5py
 import os, re, logging
+import random
 
-from data.text import TextEncoder, text_has_no_digits
+from data.text import TextEncoder, MixedTextEncoder, text_has_no_digits
 from data.audio import AudioFrontend, AudioFrontendConfig
 
 logger = logging.getLogger(__name__)
@@ -87,14 +88,19 @@ class TacotronDataset(torch.utils.data.Dataset):
 class TacotronDatasetHDF5(torch.utils.data.Dataset):
     def __init__(self, data_path, text_encoder, max_frames=None):
         self.te = text_encoder
-        self.fs = h5py.File(data_path, "r")
-        self.utt_ids = list(self.fs.keys())
+        self.data_path = data_path
+        with h5py.File(data_path, "r") as fs:
+            self.utt_ids = [x for x in fs.keys()]
+            # self.utt_ids = [x for x in fs.keys() if len(fs.get(f"{x}/mel")[()]) < max_frames]
+        self.fs = None
         self.max_frames = max_frames
 
     def __len__(self):
         return len(self.utt_ids)
 
     def __getitem__(self, index):
+        if self.fs == None:
+            self.fs = h5py.File(self.data_path, "r")
         utt_id = self.utt_ids[index]
         D_db = None
         M_db = torch.from_numpy(self.fs.get(f"{utt_id}/mel")[()])
@@ -111,12 +117,23 @@ def regex_replace_fn(x, re_match, re_replace):
 
 def build_dataset_hdf5(dataset_path, config, max_frames=None) -> TacotronDatasetHDF5:
     text_config = config["text"]
-    text_encoder = TextEncoder(
-        text_config["alphabet"],
-        text_config.get("character_map"),
-        bos=text_config.get("bos_symbols"),
-        eos=text_config.get("eos_symbols"),
-    )
+
+    if "phonemes" in text_config:
+        text_encoder = MixedTextEncoder(
+            text_config["alphabet"],
+            text_config["phonemes"],
+            text_config.get("character_map"),
+            bos=text_config.get("bos_symbols"),
+            eos=text_config.get("eos_symbols"),
+        )
+    else:
+        text_encoder = TextEncoder(
+            text_config["alphabet"],
+            text_config.get("character_map"),
+            bos=text_config.get("bos_symbols"),
+            eos=text_config.get("eos_symbols"),
+        )
+
     return TacotronDatasetHDF5(dataset_path, text_encoder, max_frames=max_frames)
 
 
@@ -139,6 +156,8 @@ def build_dataset(dataset_path, config, cache_path=None) -> TacotronDataset:
         id_column=dataset_config["utt_id"]["column"],
         text_column=dataset_config["utt_text"]["column"],
     )
+    # if dataset_config["phonemized"]:
+    #     audio_dataset =
 
     audio_config = AudioFrontendConfig()
     audio_config.from_json(config["audio"])
@@ -161,11 +180,11 @@ def build_dataset(dataset_path, config, cache_path=None) -> TacotronDataset:
 
 
 def m_fwd(x):
-    return (x + 120) / 120
+    return torch.clip((x + 100) / 100, min=0)
 
 
 def m_rev(x):
-    return (x * 120) - 120
+    return (x * 100) - 100
 
 
 def collate_fn(data):

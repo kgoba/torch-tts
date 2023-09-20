@@ -54,3 +54,11 @@ class GRUCellFixed(nn.Module):
             return torch.where(zoneout, hidden, h)
         else:
             return h
+
+class ResGRUCell(GRUCellFixed):
+    def __init__(self, input_size, bias=True, p_zoneout=None):
+        super().__init__(input_size, input_size, bias=bias, p_zoneout=p_zoneout)
+
+    def forward(self, x, h):
+        h = super().forward(x, h)
+        return x + h, h

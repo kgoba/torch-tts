@@ -4,30 +4,23 @@ from decoder_cell import DecoderCell, Taco1DecoderCell, Taco2DecoderCell
 from decoder import Decoder
 from encoder import Encoder, Encoder2
 from modules.modules import MelPostnet, MelPostnet2
-from modules.autoencoder import ReferenceEncoderVAE
+from modules.style import GST, GST_VAE, VAE
 from modules.activations import isrlu, isru
+from data.util import lengths_to_mask
 
 
 def weights_init(m):
     if isinstance(m, nn.Conv1d) or isinstance(m, nn.Linear):
         if m.weight is not None:
-            nn.init.xavier_uniform_(m.weight)
+            nn.init.xavier_normal_(m.weight, gain=1.5)
         if m.bias is not None:
             nn.init.zeros_(m.bias)
-
-
-def lengths_to_mask(lengths):
-    mask = [torch.ones(x, dtype=torch.bool, device=lengths.device) for x in lengths]
-    mask = torch.nn.utils.rnn.pad_sequence(mask, batch_first=True)
-    return mask
 
 
 class Tacotron(nn.Module):
     def __init__(self, encoder, decoder, postnet=None, refencoder=None):
         super().__init__()
         self.refencoder = refencoder
-        if refencoder != None:
-            self.fc_mem = nn.Linear(refencoder.dim_out, encoder.dim_out, bias=True)
         self.encoder = encoder
         self.decoder = decoder
         self.postnet = postnet
@@ -43,31 +36,35 @@ class Tacotron(nn.Module):
         xref_lengths=None,
         max_steps: int = 0,
     ):
-        assert cond.dtype == torch.long
-        assert cond_lengths.dtype == torch.long
-        # assert x == None or x.dtype == torch.float32
-
         memory = self.encoder(cond, cond_lengths)
-        if xref != None and self.refencoder != None:
-            style_encoding, kl_loss = self.refencoder(xref, xref_lengths)
-            memory = memory + isru(self.fc_mem(style_encoding).unsqueeze(1))
-            kl_loss = kl_loss.mean()
-        else:
-            kl_loss = torch.scalar_tensor(0)
 
-        mmask = None  # lengths_to_mask(cond_lengths)
-        y, s, w = self.decoder(memory, mmask, x, max_steps)
+        kl_loss = torch.scalar_tensor(0)
+        if xref != None and self.refencoder != None:
+            style_embed, style_loss_dict = self.refencoder(xref, xref_lengths)
+            memory += style_embed
+            if "kl" in style_loss_dict:
+                kl_loss = style_loss_dict["kl"].mean()
+
+        mmask = lengths_to_mask(cond_lengths)
+        y, s, w = self.decoder(memory, mmask, x, max_steps, p_no_forcing=0.1)
+        # y = y.detach()
+        # s = s.detach()
+        # w = w.detach()
 
         # y_post = self.postnet(y) if self.postnet else y
         y_post = y
         return y, y_post, s, {"w": w, "kl_loss": kl_loss}
 
 
-def loss_fn(y, x, mask=None, order=1):
+def mel_loss_fn(y, x, mask=None, order=1):
     if order == 0:
+        vol = x.detach().mean(dim=2).unsqueeze(2)
+        vol_weight = vol.clip(min=0.1)
         loss = y - x
-        loss = torch.where(loss > 0, loss, -loss)
-        loss = loss * x
+        loss = torch.where(loss > 0, vol_weight * loss, -loss)
+        # loss = loss * x.mean(dim=2).unsqueeze(2)
+        # loss = loss / x.mean()
+        # loss += 0.2 * (y - x).mean().abs()
     elif order == 1:
         loss = torch.nn.functional.l1_loss(x, y, reduction="none")
     else:
@@ -79,14 +76,24 @@ def loss_fn(y, x, mask=None, order=1):
         loss = torch.mean(loss * mask, dim=2)
         loss = loss.sum() / mask.sum()
 
-    return loss if order == 1 else loss.sqrt()
+    # if order == 0:
+    #     return x.mean() * loss
+    if order == 1 or order == 0:
+        return loss
+    else:
+        return loss.sqrt()  # if order == 2 else loss
 
 
-def alignment_loss(w):
+def alignment_max_loss(w):
+    w_max, _ = w.max(axis=2)
+    return (1 - w_max).mean()
+
+
+def alignment_std_loss(w):
     D = w.shape[2]
     t = torch.arange(D).unsqueeze(0).unsqueeze(0).to(device=w.device)
     w_var = torch.sum(w * t.square(), axis=2) - torch.sum(w * t, axis=2).square()
-    w_std = torch.maximum(w_var, 1e-6 * torch.ones_like(w_var)).sqrt()
+    w_std = torch.clip(w_var, min=0).mean().sqrt()
     return w_std
 
 
@@ -99,38 +106,45 @@ def run_training_step(model, batch, device):
     T = y.shape[1]
     x, xmask = x[:, :T, :], xmask[:, :T]
 
-    loss_mel = loss_fn(y, x, xmask, order=0)
-    loss_mel_post = loss_fn(y_post, x, xmask, order=0)
+    loss_mel = mel_loss_fn(y, x, xmask, order=1) + mel_loss_fn(
+        y.diff(dim=1), x.diff(dim=1), order=1
+    )
+    loss_mel_post = mel_loss_fn(y_post, x, xmask, order=1) + mel_loss_fn(
+        y_post.diff(dim=1), x.diff(dim=1), order=1
+    )
 
     pos_weight = torch.Tensor([0.1]).to(device=s.device)
     loss_stop = torch.nn.functional.binary_cross_entropy_with_logits(
         s, xmask.float(), pos_weight=pos_weight  # stop_weight,
     )
+    loss_w = alignment_std_loss(out_dict["w"])
+    loss_kl = out_dict["kl_loss"]
 
     loss = 0.8 * loss_mel + 0.2 * loss_mel_post + 0.1 * loss_stop
-    # loss += 0.0002 * out_dict["kl_loss"]
-    # loss += 0.0002 * alignment_loss(out_dict["w"]).mean()
+    loss += 0.0001 * loss_kl
+    loss += 0.0001 * loss_w
 
     return loss, {
-        "loss_mel_db": 120 * (loss_mel.item()),
-        "loss_mel_post_db": 120 * (loss_mel_post.item()),
+        "loss_mel_db": 100 * (loss_mel.item()),
+        "loss_mel_post_db": 100 * (loss_mel_post.item()),
         "loss_stop": loss_stop.item(),
-        "loss_kl": out_dict["kl_loss"].item(),
+        "loss_kl": loss_kl.item(),
+        "loss_w": loss_w.item(),
         "w": out_dict["w"].detach().cpu(),
     }
 
 
-def run_inference_step(model, text_encoder, batch, device, xref=None, max_steps=400):
+def run_inference_step(model, text_encoder, text_batch, device, xref=None, max_steps=400):
     with torch.no_grad():
-        encoded_text = [text_encoder.encode(text) for text in batch]
-        input = [torch.LongTensor(text) for text in encoded_text]
-        input_lengths = torch.LongTensor([len(text) for text in encoded_text])
-        input = torch.nn.utils.rnn.pad_sequence(input, batch_first=True)
+        encoded_text = [text_encoder.encode(text) for text in text_batch]
+        c_lengths = torch.LongTensor([len(text) for text in encoded_text])
+        c = [torch.LongTensor(text) for text in encoded_text]
+        c = torch.nn.utils.rnn.pad_sequence(c, batch_first=True)
         xref_lengths = torch.LongTensor([len(x) for x in xref]) if xref != None else None
 
         # input = input.to(device, non_blocking=True)
         y, y_post, s, out_dict = model(
-            input, input_lengths, xref=xref, xref_lengths=xref_lengths, max_steps=max_steps
+            c, c_lengths, xref=xref, xref_lengths=xref_lengths, max_steps=max_steps
         )
 
         # model_traced = torch.jit.trace(model, (input, imask)) # Export to TorchScript
@@ -162,28 +176,33 @@ def build_tacotron(config):
 
     decoder = Decoder(decoder_cell, decoder_config["r"], audio_config["num_mels"])
 
+    alphabet_size = 1 + len(text_config["alphabet"])
+    if "phonemes" in text_config:
+        alphabet_size += len(text_config["phonemes"])
+
     encoder = Encoder2(
-        1 + len(text_config["alphabet"]),
+        alphabet_size,
         dim_out=encoder_config["dim_out"],
         dim_emb=encoder_config["dim_emb"],
     )
 
     if postnet_config:
-        # postnet = MelPostnet2(
-        #     audio_config["num_mels"],
-        #     num_layers=2,
-        # )
-        postnet = MelPostnet(
-            # encoder_config["dim_out"],
-            audio_config["num_mels"],
-            audio_config["num_mels"],
-            dim_hidden=postnet_config["dim_hidden"],
-            num_layers=postnet_config["num_layers"],
-        )
+        if postnet_config.get("type") == "tacotron2":
+            postnet = MelPostnet(
+                audio_config["num_mels"],
+                dim_hidden=postnet_config["dim_hidden"],
+                num_layers=postnet_config["num_layers"],
+            )
+        else:
+            postnet = MelPostnet2(
+                audio_config["num_mels"],
+                dim_hidden=postnet_config["dim_hidden"],
+                num_layers=postnet_config["num_layers"],
+            )
     else:
         postnet = None
 
     # refencoder = ReferenceEncoderVAE(audio_config["num_mels"], dim_conv=[256, 256], dim_out=16)
-    refencoder = None
+    refencoder = VAE(num_mels=audio_config["num_mels"], dim_vae=8)
 
     return Tacotron(encoder, decoder, postnet=postnet, refencoder=refencoder)

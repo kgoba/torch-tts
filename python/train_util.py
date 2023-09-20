@@ -46,7 +46,8 @@ def load_state_dict(model, state_dict):
 
 def grad_norm(model):
     grads = [param.grad.detach().flatten() for param in model.parameters() if param.grad != None]
-    return torch.cat(grads).norm()
+    if grads:
+        return torch.cat(grads).norm()
 
 
 def loss_loop(
@@ -57,6 +58,8 @@ def loss_loop(
     optimizer=None,
     scheduler=None,
     optimizer_interval=1,
+    max_grad_norm=1,
+    # step_callback=None
 ):
     if optimizer is not None:
         model.train()
@@ -69,6 +72,7 @@ def loss_loop(
         pbar = tqdm(batch_loader)
 
     loss_hist = []
+    gn = 0
     for idx_step, batch in enumerate(pbar):
         if optimizer != None and (idx_step % optimizer_interval) == 0:
             optimizer.zero_grad()
@@ -77,24 +81,25 @@ def loss_loop(
 
         if optimizer != None:
             (loss / optimizer_interval).backward()
+            gn = grad_norm(model)
             if ((idx_step + 1) % optimizer_interval) == 0:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
                 optimizer.step()
                 if scheduler != None:
                     scheduler.step()
 
+        # step_callback(loss.item(), loss_dict)
+        loss_w = loss_dict["loss_w"]
         loss_kl = loss_dict["loss_kl"]
         loss_mel = loss_dict["loss_mel_db"]
         loss_mel_post = loss_dict["loss_mel_post_db"]
         loss_hist.append(loss_mel_post)
+
         pbar.set_postfix_str(
-            f"Loss: {loss.item():.4f} (mel: {loss_mel:.3f}/{loss_mel_post:.3f}), kl: {loss_kl:.3f}, mean: {np.mean(loss_hist):.3f}"
+            f"GN: {gn:.3f} L: {loss.item():.4f} (mel: {loss_mel:.3f}/{loss_mel_post:.3f}/{np.mean(loss_hist):.3f}), w: {loss_w:.3f}, kl: {loss_kl:.3f}"
         )
         if num_steps and idx_step + 1 >= num_steps:
             break
-
-        del loss
-        gc.collect()
-        torch.mps.empty_cache()
 
     if optimizer != None:
         optimizer.zero_grad()
@@ -126,7 +131,7 @@ class Trainer:
         self.step = step
         self.lr = lr
 
-        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr, amsgrad=True)
+        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr) # , amsgrad=True)
         # self.optimizer = torch.optim.NAdam(model.parameters(), lr=self.lr, momentum_decay=0)
         # self.optimizer = torch.optim.RMSprop(model.parameters(), lr=self.lr)
         # self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=100)
@@ -198,7 +203,7 @@ class Trainer:
             self.step += len(epoch_loss)
 
             with torch.no_grad():
-                epoch_test_loss, loss_dict = loss_loop(pmodel, test_loader, device, num_steps=10)
+                epoch_test_loss, loss_dict = loss_loop(pmodel, test_loader, device)
             loss_hist.append([np.mean(epoch_loss), np.mean(epoch_test_loss)])
 
             self.save_checkpoint(self.checkpoint_path)

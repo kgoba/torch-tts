@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from mps_fixes.mps_fixes import GRUCellFixed
 
 
 def reverse_padded(x, x_lengths):
@@ -8,7 +7,7 @@ def reverse_padded(x, x_lengths):
     return torch.nn.utils.rnn.pad_sequence(x_rev_list, batch_first=True)
 
 
-class ResGRUCell(GRUCellFixed):
+class ResGRUCell(nn.GRUCell):
     def __init__(self, input_size, bias=True, p_zoneout=None):
         super().__init__(input_size, input_size, bias=bias, p_zoneout=p_zoneout)
 
@@ -33,7 +32,6 @@ class LSTMZoneoutCell(nn.LSTMCell):
         else:
             h = self.p_zoneout * hidden[0] + (1.0 - self.p_zoneout) * h
             c = self.p_zoneout * hidden[1] + (1.0 - self.p_zoneout) * c
-            pass
         return h, c
 
 
@@ -96,16 +94,16 @@ class BiDiLSTMSplit(nn.Module):
         idx = torch.arange(0, T, device=x_lengths.device)
         mask = idx.unsqueeze(0) >= x_lengths.unsqueeze(1)
 
-        f_h0, b_h0 = torch.split(h0, 2)
-        f_c0, b_c0 = torch.split(c0, 2)
+        f_h0, b_h0 = torch.chunk(h0, 2, dim=-1)
+        f_c0, b_c0 = torch.chunk(c0, 2, dim=-1)
         x_f, (f_hn, _) = self.rnn_f(x, (f_h0, f_c0))  # B x T x D_rnn
         x_b, (b_hn, _) = self.rnn_b(reverse_padded(x, x_lengths), (b_h0, b_c0))  # B x T x D_rnn
         x = torch.cat((x_f, reverse_padded(x_b, x_lengths)), dim=2)
         x.masked_fill_(mask.unsqueeze(2), value=0)
-        return x, torch.cat(f_hn, b_hn, dim=2)
+        return x, torch.cat([f_hn, b_hn], dim=2)
 
 
-class BiDiLSTMStandard(nn.Module):
+class BiDiLSTM(nn.Module):
     def __init__(self, input_size, hidden_size, bias=True):
         super().__init__()
         self.rnn = nn.LSTM(
@@ -113,7 +111,11 @@ class BiDiLSTMStandard(nn.Module):
         )
 
     def forward(self, x, x_lengths, h0, c0):
-        x = nn.utils.rnn.pack_padded_sequence(x, x_lengths, batch_first=True)
+        x = nn.utils.rnn.pack_padded_sequence(
+            x, x_lengths.cpu(), batch_first=True, enforce_sorted=False
+        )
+        h0 = torch.cat(torch.chunk(h0, 2, dim=-1), dim=0)
+        c0 = torch.cat(torch.chunk(c0, 2, dim=-1), dim=0)
         x, (h, _) = self.rnn(x, (h0, c0))  # B x T x D_rnn
-        x = nn.utils.rnn.unpack_sequence(x)
+        x, _ = nn.utils.rnn.pad_packed_sequence(x, batch_first=True)
         return x, h

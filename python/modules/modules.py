@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from mps_fixes.mps_fixes import Conv1dFix, GRUCellFixed
-from modules.activations import ISRU
+from modules.activations import ISRU, isru
 
 
 class Transposition(nn.Module):
@@ -37,7 +37,7 @@ class PreNet(nn.Module):
     def forward(self, x):
         for layer in self.layers:
             x = self.activation(layer(x))
-            x = torch.dropout(x, self.p_dropout, self.always_dropout or self.training)
+            x = torch.dropout(x, self.p_dropout, False and (self.always_dropout or self.training))
         return x
 
 
@@ -144,31 +144,29 @@ class Taco1PostNet(nn.Module):
 
 
 class MelPostnet(nn.Module):
-    def __init__(self, dim_in, dim_out, dim_hidden=512, kernel_size=5, num_layers=3):
+    def __init__(self, dim_mel, dim_hidden=512, kernel_size=5, num_layers=3):
         super().__init__()
 
         padding = (kernel_size - 1) // 2
-        self.conv = nn.Sequential(
-            nn.Conv1d(dim_in, dim_hidden, kernel_size=kernel_size, padding=padding, bias=False),
-            nn.BatchNorm1d(dim_hidden),
-            ISRU(),
-            nn.Conv1d(
-                dim_hidden, dim_hidden, kernel_size=kernel_size, padding=padding, bias=False
-            ),
-            nn.BatchNorm1d(dim_hidden),
-            ISRU(),
-            # nn.Conv1d(dim_hidden, dim_out, kernel_size=kernel_size, padding=padding, bias=False),
-            # nn.BatchNorm1d(dim_out),
+        conv_dims = [dim_mel] + [dim_hidden for _ in range(num_layers)]
+        self.conv = nn.ModuleList(
+            [
+                nn.Sequential(
+                    nn.Conv1d(ch_in, ch_out, kernel_size=kernel_size, padding=padding, bias=False),
+                    nn.BatchNorm1d(ch_out),
+                )
+                for ch_in, ch_out in zip(conv_dims[:-1], conv_dims[1:])
+            ]
         )
-        self.rnn = nn.LSTM(dim_hidden, dim_hidden, batch_first=True)
-        self.fc_out = nn.Linear(dim_hidden, dim_out)
+        self.fc_out = nn.Linear(dim_hidden, dim_mel, bias=False)
 
     def forward(self, x):
-        x_in = x
-        x = self.conv(x.mT).mT
-        x, _ = self.rnn(x)
-        x = self.fc_out(x)
-        return x  # + x_in
+        x_conv = x.mT
+        for layer in self.conv:
+            x_conv = isru(layer(x_conv))
+            x_conv = nn.functional.dropout(x_conv, p=0.1, training=self.training)
+
+        return x + self.fc_out(x_conv.mT)
 
 
 class MelPostnet2(nn.Module):
@@ -179,9 +177,14 @@ class MelPostnet2(nn.Module):
             [
                 nn.Sequential(
                     Transposition(),
-                    Conv1dFix(dim_in, dim_hidden, kernel_size=5, padding=2),
-                    # nn.BatchNorm1d(dim_hidden),
-                    ISRU(),
+                    Conv1dFix(dim_in, dim_hidden, kernel_size=5, padding=2, bias=False),
+                    nn.BatchNorm1d(dim_hidden),
+                    nn.LeakyReLU(),
+                    nn.Dropout(0.2),
+                    Conv1dFix(dim_hidden, dim_hidden, kernel_size=5, padding=2, bias=False),
+                    nn.BatchNorm1d(dim_hidden),
+                    nn.LeakyReLU(),
+                    nn.Dropout(0.2),
                     Conv1dFix(dim_hidden, dim_in, kernel_size=5, padding=2, bias=False),
                     Transposition(),
                     # nn.Linear(dim_hidden, dim_in),

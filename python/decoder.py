@@ -3,19 +3,17 @@ import torch.nn as nn
 
 
 class Decoder(nn.Module):
-    def __init__(self, decoder_cell, r, dim_mel, prenet=None, stop_threshold=-2):
+    def __init__(self, decoder_cell, r, dim_mel, stop_threshold=-2):
         super().__init__()
         self.decoder_cell = decoder_cell
-        self.prenet = prenet
         self.stop_threshold = stop_threshold
         self.r = r
         self.dim_mel = dim_mel
 
         self.fc_mel = nn.Linear(decoder_cell.dim_output, self.r * self.dim_mel)
         self.fc_stop = nn.Linear(decoder_cell.dim_output, self.r)
-        self.p_no_forcing = 0.1
 
-    def forward(self, memory, mmask, x=None, max_steps: int = 0):
+    def forward(self, memory, mmask, x=None, max_steps: int = 0, p_no_forcing: float = None):
         # memory: B x L x D_enc
         # x:      B x T x D_mel
         B = memory.shape[0]  # batch size
@@ -23,6 +21,12 @@ class Decoder(nn.Module):
         dtype = memory.dtype
         device = memory.device
 
+        # print(
+        #     f"|fc_mel| = {torch.norm(self.fc_mel.weight):.2f} |fc_stop| = {torch.norm(self.fc_stop.weight):.2f} "
+        #     f"|prenet.layer1| = {torch.norm(self.decoder_cell.pre_net.layers[0].weight):.2f} "
+        #     f"|prenet.layer2| = {torch.norm(self.decoder_cell.pre_net.layers[1].weight):.2f}"
+        #     f"|att.query| = {torch.norm(self.decoder_cell.attention_module.query_layer.weight):.2f}"
+        # )
         state_t = self.decoder_cell.initial_state(B, L, dtype, device)
 
         # GO frame B x r x D_mel
@@ -34,14 +38,13 @@ class Decoder(nn.Module):
         else:
             T = (x.shape[1] // self.r) * self.r
             x_split = x[:, :T, :].split(self.r, dim=1)
-            # drop_frame = torch.mean(x, dim=1).unsqueeze(1).tile(1, self.r, 1)
+            # x_avg = torch.mean(x, dim=1).unsqueeze(1).expand_as(y_t)
 
         y, s, w = [], [], []
         step = 0
         while True:
             y_t = y_t[:, -1, :].unsqueeze(1)
             d_t, c_t, state_t = self.decoder_cell(y_t, state_t, memory, mmask)
-            # d_t = d_t.detach()
 
             w_t = state_t[0]  # B x L
             s_t = self.fc_stop(d_t).unsqueeze(2)  # B x r x 1
@@ -57,7 +60,7 @@ class Decoder(nn.Module):
                 if step >= len(x_split):
                     break
                 # Force teacher inputs
-                if not self.p_no_forcing or torch.rand(1) > self.p_no_forcing:
+                if not p_no_forcing or torch.rand(1) > p_no_forcing:
                     y_t = x_split[step - 1]  # B x r x D_mel
             else:
                 if torch.any(s_t < self.stop_threshold) or (max_steps and (step > max_steps)):

@@ -15,11 +15,23 @@ def synth_audio(y, audio_frontend):
     for y_i in y:
         M_db = m_rev(y_i)
         D_db = audio_frontend.mel_inv(M_db)
-        print(M_db.mean(), D_db.mean())
+        # print(M_db.mean(), D_db.mean())
         wave_i = audio_frontend.decode(D_db)
         wave_i = wave_i / wave_i.abs().max()
         wave.append(wave_i)
     return torch.stack(wave)
+
+
+def synth_audio_vocoder(y, vocoder):
+    # y_log = (y - 0.911) / 0.0724
+    y_log = (y - 0.911) / 0.0869
+    y_log = y_log * 1.1 - 1.0
+    # print(y_log.mean())
+    y_log = y_log.mT
+    wave = vocoder(y_log)
+    wave = wave / wave.abs().max()
+    wave = wave.squeeze(1)
+    return wave.detach()
 
 
 def main(args):
@@ -53,7 +65,6 @@ def main(args):
         xref = None
 
     model = build_tacotron(config)
-    model.eval()
 
     trainer = Trainer(model, args.run_dir)
     trainer.load_checkpoint(trainer.checkpoint_path)
@@ -61,12 +72,20 @@ def main(args):
     # model_scripted = torch.jit.script(model) # Export to TorchScript
 
     model.to(device)
+    model.eval()
 
     y, extra = run_inference_step(
         model, text_encoder, [args.text], device, xref=xref, max_steps=args.max_steps
     )
 
-    wave = synth_audio(y, audio_frontend)
+    if args.vocoder:
+        # if args.ref:
+        #     y = xref
+        vocoder = torch.jit.load(args.vocoder)
+        vocoder.eval()
+        wave = synth_audio_vocoder(y, vocoder)
+    else:
+        wave = synth_audio(y, audio_frontend)
 
     if args.output:
         torchaudio.save(args.output, wave, audio_config.sample_rate)
@@ -88,6 +107,7 @@ def main(args):
 
         plt.subplot(311)
         plt.imshow(y[0].numpy().T, origin="lower")
+        # plt.imshow(xref.numpy().T, origin="lower")
         plt.subplot(312)
         w_0 = extra["w"][0].numpy()
         # w_0 = np.power(w_0, 2)
@@ -97,6 +117,8 @@ def main(args):
         # zz = np.dot(y[0].numpy().T, wt_0.repeat(2, axis=0))
         # yy = np.dot(w_0.repeat(2, axis=0), zz.T)
         plt.imshow(w_0.T, origin="lower")
+        # plt.hist(y[0].flatten().numpy().T, bins=25)
+        # plt.hist(model.decoder.fc_mel.bias.detach().flatten().numpy(), bins=25)
         # plt.imshow(np.where(w_0 > 0.95, 1, 0).T, origin="lower")
         # plt.imshow(yy.T, origin="lower")
         # plt.imshow(cc, origin="lower", aspect=4)
@@ -108,8 +130,10 @@ def main(args):
         w_mean = np.sum(w_0 * t, axis=1)
         w2_mean = np.sum(w_0 * t**2, axis=1)
         w_var = w2_mean - w_mean**2
-        plt.plot(np.sqrt(w_var))
+        # plt.plot(np.sqrt(w_var))
         # plt.plot(extra["s"][0].numpy())
+        plt.plot(w_0.max(axis=1), marker=".")
+        # plt.hist(1 - w_0.max(axis=1), cumulative=True, density=True, bins=np.linspace(0, 1, 21))
         plt.grid()
         plt.show()
 
@@ -130,6 +154,7 @@ if __name__ == "__main__":
     parser.add_argument("--play", action="store_true", help="Play audio")
     parser.add_argument("--plot", action="store_true", help="Show plots")
     parser.add_argument("--max-steps", type=int, help="Max decoder steps", default=400)
+    parser.add_argument("--vocoder", help="Vocoder scripted module")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)

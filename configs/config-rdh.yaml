@@ -45,12 +45,12 @@ text:
     eos_symbols: "#"
 
 audio:
-    sample_rate: 16000
-    hop_length: 0.010
-    win_length: 0.035
+    sample_rate: 22050
+    hop_length: 256
+    win_length: 1024
     num_mels: 80
     fmin: 50
-    fmax: 7600
+    fmax: 8000
 
 model:
     encoder:

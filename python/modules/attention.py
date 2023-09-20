@@ -94,29 +94,28 @@ class ContentMarkovAttention(nn.Module):
 
 
 class StepwiseMonotonicAttention(nn.Module):
-    def __init__(self, dim_context, dim_input, sigmoid_noise=2.):
+    def __init__(self, dim_context, dim_input, sigmoid_noise=1.0):
         super().__init__()
         self.sigmoid_noise = sigmoid_noise
         self.query_layer = nn.Linear(dim_input, dim_context, bias=False)
-        self.bias = nn.Parameter(torch.Tensor([1.]))
+        self.bias = nn.Parameter(torch.Tensor([1.0]))
         # self.v = nn.Linear(dim_context, 1, bias=False)
 
     def forward(self, x, w, context, cmask=None):
-        q = self.query_layer(x) # B x D_ctx
+        q = self.query_layer(x)  # B x D_ctx
         # e = self.v(torch.tanh(q.unsqueeze(1) + context))
         e = torch.bmm(context, q.unsqueeze(2))
         e = e.squeeze(2)
-        e = e + self.bias
-        # print(context.mean(), x.mean(), q.mean(), e.mean())
+        # e = e + self.bias
 
         if self.training:
             e += self.sigmoid_noise * torch.randn_like(e)
 
-        if cmask is not None:
-            e.masked_fill_(~cmask, -1e12)
+        # if cmask is not None:
+        #     e.masked_fill_(~cmask, 1e12)
 
         e[:, -1] = 1e12
-        p0 = isru_sigmoid(e) # e.sigmoid()
+        p0 = isru_sigmoid(e)  # e.sigmoid()
         w0 = w * p0
         w1 = w * (1 - p0)
 
@@ -124,3 +123,53 @@ class StepwiseMonotonicAttention(nn.Module):
         w[:, 1:] += w1[:, :-1]
 
         return w
+
+
+class MultiHeadAttention(nn.Module):
+    """
+    input:
+        query --- [N, T_q, query_dim]
+        key --- [N, T_k, key_dim]
+    output:
+        out --- [N, T_q, num_units]
+    """
+
+    def __init__(self, query_dim, key_dim, num_units, num_heads):
+        super().__init__()
+        self.num_units = num_units
+        self.num_heads = num_heads
+        self.d_gain = 1 / (key_dim**0.5)
+
+        self.W_query = nn.Linear(in_features=query_dim, out_features=num_units, bias=False)
+        self.W_key = nn.Linear(in_features=key_dim, out_features=num_units, bias=False)
+        self.W_value = nn.Linear(in_features=key_dim, out_features=num_units, bias=False)
+
+    def forward(self, query, key, key_mask=None):
+        querys = self.W_query(query)  # [N, T_q, num_units]
+        keys = self.W_key(key)  # [N, T_k, num_units]
+        values = self.W_value(key)
+
+        split_size = self.num_units // self.num_heads
+        querys = torch.stack(
+            torch.split(querys, split_size, dim=2), dim=0
+        )  # [h, N, T_q, num_units/h]
+        keys = torch.stack(torch.split(keys, split_size, dim=2), dim=0)  # [h, N, T_k, num_units/h]
+        values = torch.stack(
+            torch.split(values, split_size, dim=2), dim=0
+        )  # [h, N, T_k, num_units/h]
+
+        # score = softmax(QK^T / (d_k ** 0.5))
+        scores = self.d_gain * torch.matmul(querys, keys.transpose(2, 3))  # [h, N, T_q, T_k]
+        if key_mask != None:
+            scores.masked_fill_(~(key_mask.unsqueeze(0).unsqueeze(2)), -1e6)
+        scores = nn.functional.softmax(scores, dim=3)
+        if not self.training:
+            print(
+                f"MHA score: max={scores.max().item():.3f} T_q={query.size(1)} T_k={key.size(1)} N={key.size(0)}"
+            )
+
+        # out = score * V
+        out = torch.matmul(scores, values)  # [h, N, T_q, num_units/h]
+        out = torch.cat(torch.split(out, 1, dim=0), dim=3).squeeze(0)  # [N, T_q, num_units]
+
+        return out
