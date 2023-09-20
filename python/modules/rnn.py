@@ -94,8 +94,8 @@ class BiDiLSTMSplit(nn.Module):
         idx = torch.arange(0, T, device=x_lengths.device)
         mask = idx.unsqueeze(0) >= x_lengths.unsqueeze(1)
 
-        f_h0, b_h0 = torch.chunk(h0, 2, dim=-1)
-        f_c0, b_c0 = torch.chunk(c0, 2, dim=-1)
+        f_h0, b_h0 = [t.contiguous() for t in torch.chunk(h0, 2, dim=-1)]
+        f_c0, b_c0 = [t.contiguous() for t in torch.chunk(c0, 2, dim=-1)]
         x_f, (f_hn, _) = self.rnn_f(x, (f_h0, f_c0))  # B x T x D_rnn
         x_b, (b_hn, _) = self.rnn_b(reverse_padded(x, x_lengths), (b_h0, b_c0))  # B x T x D_rnn
         x = torch.cat((x_f, reverse_padded(x_b, x_lengths)), dim=2)
