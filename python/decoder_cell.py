@@ -67,7 +67,7 @@ class Taco2DecoderCell(nn.Module):
         self.dim_output = sum(dim_rnn) + dim_ctx # + dim_pre
 
         # self.pre_net = PreNet(dim_mel, dim_pre, always_dropout=False, p_dropout=0.5, dim_hidden=64, activation=isrlu)
-        self.pre_net = PreNet(dim_mel, dim_pre, always_dropout=False, p_dropout=0.5, dim_hidden=128)
+        self.pre_net = PreNet(dim_mel, dim_pre, always_dropout=True, p_dropout=0.5, dim_hidden=128)
         self.attention_module = StepwiseMonotonicAttention(dim_ctx, sum(dim_rnn) + dim_ctx)
 
         rnn_dims = [dim_pre] + dim_rnn
@@ -113,7 +113,7 @@ class Taco2DecoderCell(nn.Module):
             h_dec[idx] = rnn(x_dec, h_dec[idx])  # [B, D_rnn]
             x_dec = h_dec[idx][0]
 
-        x_att = torch.cat([h_dec[0][0], h_dec[1][0], ctx_att], dim=1)
+        x_att = torch.cat([h_dec[0][0], h_dec[1][0], torch.zeros_like(ctx_att)], dim=1)
         # x_att = torch.cat([h_dec[0][0], h_dec[1][0], ctx_att], dim=1)
         # x_att = nn.functional.dropout(x_att, p=0.1, training=self.training)
         w = self.attention_module(x_att, w, memory, mmask)  # [B, L]
@@ -123,7 +123,7 @@ class Taco2DecoderCell(nn.Module):
         through a linear transform to predict the target spectrogram frame.
         """
         # x_dec = torch.cat((torch.zeros_like(h_dec[0][0]), h_dec[1][0], ctx_att), dim=1)
-        x_dec = torch.cat((h_dec[0][0], h_dec[1][0], ctx_att), dim=1)
+        x_dec = torch.cat((h_dec[0][0], h_dec[1][0], torch.zeros_like(ctx_att)), dim=1)
         # x_dec = nn.functional.dropout(x_dec, p=0.1, training=self.training)
 
         dec_state = w, h_dec

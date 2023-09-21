@@ -8,19 +8,20 @@ from tacotron import lengths_to_mask, mel_loss_fn, alignment_std_loss
 
 
 def plot_attention(w):
-    fig, ax = plt.subplots(figsize=(4, 2))
+    fig, ax = plt.subplots(figsize=(10, 4), layout='tight')
     im = ax.imshow(w, aspect="equal", origin="lower", interpolation="none")
-    plt.colorbar(im, ax=ax)
+    # plt.colorbar(im, ax=ax)
     fig.canvas.draw()
-    plt.close()
+    # plt.close()
     return fig
 
 
 class TacotronTask(pl.LightningModule):
-    def __init__(self, model, lr):
+    def __init__(self, model, lr, extra_loss=False):
         super().__init__()
         self.model = model
         self.lr = lr
+        self.extra_loss = extra_loss
 
     def configure_optimizers(self):
         return torch.optim.AdamW(self.parameters(), lr=self.lr)
@@ -54,37 +55,40 @@ class TacotronTask(pl.LightningModule):
         T = y.shape[1]
         x, xmask = x[:, :T, :], xmask[:, :T]
 
-        loss_mel = mel_loss_fn(y, x, xmask, order=1) + mel_loss_fn(
-            y.diff(dim=1), x.diff(dim=1), order=1
-        )
-        loss_mel_post = mel_loss_fn(y_post, x, xmask, order=1) + mel_loss_fn(
-            y_post.diff(dim=1), x.diff(dim=1), order=1
-        )
+        loss_mel = mel_loss_fn(y, x, xmask, order=1)
+        loss_mel_post = mel_loss_fn(y_post, x, xmask, order=1)
 
+        loss_dmel = mel_loss_fn(y.diff(dim=1), x.diff(dim=1), xmask[:, 1:], order=1)
+        loss_dmel_post = mel_loss_fn(y_post.diff(dim=1), x.diff(dim=1), xmask[:, 1:], order=1)
+        
         pos_weight = torch.Tensor([0.1]).to(device=s.device)
         loss_stop = torch.nn.functional.binary_cross_entropy_with_logits(
             s, xmask.float(), pos_weight=pos_weight  # stop_weight,
         )
 
+        loss = 0.8 * loss_mel + 0.2 * loss_mel_post + 0.1 * loss_stop
+
         loss_w = alignment_std_loss(out_dict["w"])
         loss_kl = out_dict["kl_loss"]
 
-        loss = 0.8 * loss_mel + 0.2 * loss_mel_post + 0.1 * loss_stop
-        loss += 0.0001 * loss_w
-        loss += 0.0001 * loss_kl
+        loss += 0.0002 * loss_kl
+        if self.extra_loss:
+            loss += 0.0001 * loss_w
+            loss += 0.4 * loss_dmel + 0.1 * loss_dmel_post
 
         return (
             loss,
             {
                 "total": loss.item(),
-                "mel_db": 120 * (loss_mel.item()),
-                "mel_post_db": 120 * (loss_mel_post.item()),
+                "mel_db": 100 * (loss_mel.item()),
+                "mel_post_db": 100 * (loss_mel_post.item()),
                 "stop": loss_stop.item(),
                 "kl": loss_kl.item(),
                 "w": loss_w.item(),
             },
             {
                 "w": out_dict["w"].detach().cpu(),
+                "y_post": y_post.detach().cpu(),
             },
         )
 
@@ -110,5 +114,8 @@ class TacotronTask(pl.LightningModule):
         if tb_logger != None:
             tb_logger.add_figure(
                 f"train/w_{batch_idx}", plot_attention(img_dict["w"][0].mT), self.global_step
+            )
+            tb_logger.add_figure(
+                f"train/yp_{batch_idx}", plot_attention(img_dict["y_post"][0,:500].mT), self.global_step
             )
         return loss

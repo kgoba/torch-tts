@@ -37,7 +37,7 @@ class PreNet(nn.Module):
     def forward(self, x):
         for layer in self.layers:
             x = self.activation(layer(x))
-            x = torch.dropout(x, self.p_dropout, False and (self.always_dropout or self.training))
+            x = torch.dropout(x, self.p_dropout, self.always_dropout or self.training)
         return x
 
 

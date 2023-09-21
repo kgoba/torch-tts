@@ -37,7 +37,7 @@ def train(args, model, dataset, device):
     torch.set_float32_matmul_precision('medium')
     
     if args.lightning:
-        task = TacotronTask(model, lr=args.lr)
+        task = TacotronTask(model, lr=args.lr, extra_loss=args.finetune)
         logger = pl.loggers.tensorboard.TensorBoardLogger(save_dir="lightning_logs", version=0)
         checkpoint_callback = pl.callbacks.ModelCheckpoint(
             dirpath="checkpoints",
@@ -49,6 +49,7 @@ def train(args, model, dataset, device):
             logger=logger,
             callbacks=[checkpoint_callback],
             accelerator="cpu" if args.cpu else "auto",
+            accumulate_grad_batches=args.opt_interval,
             # val_check_interval=100,
             # limit_train_batches=100,
         )
@@ -127,6 +128,7 @@ if __name__ == "__main__":
     parser.add_argument("--cpu", action="store_true", help="Force using CPU for training")
     parser.add_argument("--lr", default=1e-3, type=float, help="Learning rate")
     parser.add_argument("--lightning", action="store_true", help="Use Lightning for training")
+    parser.add_argument("--finetune", action="store_true", help="Finetuning with extra loss")
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)
