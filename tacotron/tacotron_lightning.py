@@ -60,7 +60,7 @@ class TacotronTask(pl.LightningModule):
 
         loss_dmel = mel_loss_fn(y.diff(dim=1), x.diff(dim=1), xmask[:, 1:], order=1)
         loss_dmel_post = mel_loss_fn(y_post.diff(dim=1), x.diff(dim=1), xmask[:, 1:], order=1)
-        
+
         pos_weight = torch.Tensor([0.1]).to(device=s.device)
         loss_stop = torch.nn.functional.binary_cross_entropy_with_logits(
             s, xmask.float(), pos_weight=pos_weight  # stop_weight,

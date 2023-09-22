@@ -35,7 +35,7 @@ def train(args, model, dataset, device):
     )
 
     torch.set_float32_matmul_precision('medium')
-    
+
     if args.lightning:
         task = TacotronTask(model, lr=args.lr, extra_loss=args.finetune)
         logger = pl.loggers.tensorboard.TensorBoardLogger(save_dir="lightning_logs", version=0)
