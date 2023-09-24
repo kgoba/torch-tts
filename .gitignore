@@ -2,6 +2,8 @@ build/
 /data
 runs/
 models/
+lightning_logs/
+checkpoints/
 .venv/
 .vscode/
 __pycache__/

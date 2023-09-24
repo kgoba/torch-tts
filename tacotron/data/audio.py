@@ -35,6 +35,7 @@ class AudioFrontend:
             n_stft=n_freqs,
             f_min=self.config.fmin,
             f_max=self.config.fmax,
+            mel_scale="slaney",
             norm="slaney",
         )
         self.mels_to_stft = InverseMelScale(
@@ -43,6 +44,7 @@ class AudioFrontend:
             n_stft=n_freqs,
             f_min=self.config.fmin,
             f_max=self.config.fmax,
+            mel_scale="slaney",
             norm="slaney",
         )
         self.spectrogram = Spectrogram(

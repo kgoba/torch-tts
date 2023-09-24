@@ -121,7 +121,7 @@ def run_training_step(model, batch, device):
     loss_kl = out_dict["kl_loss"]
 
     loss = 0.8 * loss_mel + 0.2 * loss_mel_post + 0.1 * loss_stop
-    loss += 0.0001 * loss_kl
+    loss += 0.0002 * loss_kl
     loss += 0.0001 * loss_w
 
     return loss, {
@@ -156,7 +156,6 @@ def build_tacotron(config):
     audio_config = config["audio"]
     decoder_config = config["model"]["decoder"]
     encoder_config = config["model"]["encoder"]
-    postnet_config = config["model"]["postnet"]
 
     if decoder_config["type"] == "tacotron1":
         decoder_cell_class = Taco1DecoderCell
@@ -186,6 +185,7 @@ def build_tacotron(config):
         dim_emb=encoder_config["dim_emb"],
     )
 
+    postnet_config = config["model"].get("postnet")
     if postnet_config:
         if postnet_config.get("type") == "tacotron2":
             postnet = MelPostnet(
@@ -202,7 +202,13 @@ def build_tacotron(config):
     else:
         postnet = None
 
-    # refencoder = ReferenceEncoderVAE(audio_config["num_mels"], dim_conv=[256, 256], dim_out=16)
-    refencoder = VAE(num_mels=audio_config["num_mels"], dim_vae=8)
+    style_encoder_config = config["model"].get("style_encoder")
+    if style_encoder_config:
+        refencoder = VAE(
+            num_mels=audio_config["num_mels"],
+            dim_vae=style_encoder_config["dim_vae"]
+        )
+    else:
+        refencoder = None
 
     return Tacotron(encoder, decoder, postnet=postnet, refencoder=refencoder)
