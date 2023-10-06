@@ -73,7 +73,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset", help="Dataset path")
     parser.add_argument("config", help="Configuration file")
-    parser.add_argument("--data", help="Data file path", dest="data_path")
+    parser.add_argument("data", help="Data file path", dest="data_path")
     parser.add_argument("--cpu", action="store_true", help="Force using CPU for training")
     args = parser.parse_args()
 

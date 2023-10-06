@@ -3,7 +3,7 @@ import torch.nn as nn
 
 
 class Decoder(nn.Module):
-    def __init__(self, decoder_cell, r, dim_mel, stop_threshold=-2):
+    def __init__(self, decoder_cell, r, dim_mel, stop_threshold=-2.0):
         super().__init__()
         self.decoder_cell = decoder_cell
         self.stop_threshold = stop_threshold

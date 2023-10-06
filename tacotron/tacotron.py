@@ -51,8 +51,8 @@ class Tacotron(nn.Module):
         # s = s.detach()
         # w = w.detach()
 
-        # y_post = self.postnet(y) if self.postnet else y
-        y_post = y
+        y_post = self.postnet(y) if self.postnet else y
+        # y_post = y
         return y, y_post, s, {"w": w, "kl_loss": kl_loss}
 
 

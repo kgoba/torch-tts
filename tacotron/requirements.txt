@@ -2,6 +2,7 @@ h5py>=3.9.0
 matplotlib>=3.7.2
 torch>=2.0.1
 torchaudio>=2.0.2
-tqdm>=4.65.0
+soundfile
+tqdm
 pytorch-lightning
 tensorboard
