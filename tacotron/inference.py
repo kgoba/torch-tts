@@ -25,7 +25,7 @@ def synth_audio(y, audio_frontend):
 def synth_audio_vocoder(y, vocoder):
     # y_log = (y - 0.911) / 0.0724
     y_log = (y - 0.911) / 0.0869
-    y_log = y_log * 1.1 - 1.0
+    # y_log = y_log * 1.1 - 1.0
     # print(y_log.mean())
     y_log = y_log.mT
     wave = vocoder(y_log)

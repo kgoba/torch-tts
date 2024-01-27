@@ -101,10 +101,10 @@ class StepwiseMonotonicAttention(nn.Module):
         self.bias = nn.Parameter(torch.Tensor([1.0]))
         # self.v = nn.Linear(dim_context, 1, bias=False)
 
-    def forward(self, x, w, context, cmask=None):
+    def forward(self, x, w, memory, cmask=None):
         q = self.query_layer(x)  # B x D_ctx
         # e = self.v(torch.tanh(q.unsqueeze(1) + context))
-        e = torch.bmm(context, q.unsqueeze(2))
+        e = torch.bmm(memory, q.unsqueeze(2))
         e = e.squeeze(2)
         # e = e + self.bias
 
@@ -122,7 +122,8 @@ class StepwiseMonotonicAttention(nn.Module):
         w = w0
         w[:, 1:] += w1[:, :-1]
 
-        return w
+        ctx = torch.bmm(w.unsqueeze(1), memory).squeeze(1)
+        return ctx, w
 
 
 class MultiHeadAttention(nn.Module):

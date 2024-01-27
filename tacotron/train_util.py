@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 import numpy as np
 from matplotlib import pyplot as plt
 from tqdm.auto import tqdm
@@ -121,6 +122,14 @@ def optimizer_to(optim, device):
                     if subparam._grad is not None:
                         subparam._grad.data = subparam._grad.data.to(device)
 
+class ModelWrapper(nn.Module):
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+    def forward(self, **kwargs):
+        self.model(**kwargs)
+
 
 class Trainer:
     def __init__(self, model: torch.nn.Module, checkpoint_dir: str, step: int = 0, lr=5e-4):
@@ -167,12 +176,17 @@ class Trainer:
 
     def load_checkpoint(self, path):
         logger.info(f"Loading checkpoint from {path}")
-        checkpoint = torch.load(path)
-        self.step = checkpoint["step"]
+        checkpoint = torch.load(path, map_location=torch.device('cpu'))
+        # print(checkpoint["optimizer_states"])
+        # self.step = checkpoint["step"]
+        self.step = checkpoint["global_step"]
+        wrapper = ModelWrapper(self.model)
         try:
             # assert False
-            self.model.load_state_dict(checkpoint["model_state"], strict=False)
-            self.optimizer.load_state_dict(checkpoint["optimizer_state"])
+            wrapper.load_state_dict(checkpoint["state_dict"]) #, strict=False)
+            # self.model.load_state_dict(checkpoint["model_state"], strict=False)
+            self.optimizer.load_state_dict(checkpoint["optimizer_states"][0])
+            # self.optimizer.load_state_dict(checkpoint["optimizer_state"])
             for g in self.optimizer.param_groups:
                 g["lr"] = self.lr
         except:
