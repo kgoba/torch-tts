@@ -28,7 +28,9 @@ def train(args, model, dataset, device):
         drop_last=True,
     )
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, collate_fn=collate_fn, batch_sampler=train_batch_sampler
+        train_dataset, collate_fn=collate_fn, batch_sampler=train_batch_sampler,
+        num_workers=2,
+        pin_memory=True
     )
     test_loader = torch.utils.data.DataLoader(
         test_dataset, collate_fn=collate_fn, batch_size=args.eval_batch_size
@@ -50,6 +52,7 @@ def train(args, model, dataset, device):
             callbacks=[checkpoint_callback],
             accelerator="cpu" if args.cpu else "auto",
             accumulate_grad_batches=args.opt_interval,
+            precision=args.precision,
             # val_check_interval=100,
             # limit_train_batches=100,
         )
@@ -118,6 +121,7 @@ if __name__ == "__main__":
     parser.add_argument("config", help="Configuration file")
     parser.add_argument("--run", default="run_default", help="Training run path", dest="run_dir")
     parser.add_argument("--data", help="Data file path", dest="data_path")
+    parser.add_argument("--precision", help="Training precision", default="32")
     parser.add_argument("--batch-size", help="Training batch size", type=int, default=32)
     parser.add_argument("--eval-batch-size", help="Validation batch size", type=int, default=20)
     parser.add_argument("--eval-size", help="Validation dataset size", type=int, default=80)

@@ -1,11 +1,11 @@
 seed: 42
 
 dataset:
-    transcript: "script (1)"
+    transcript: "script"
     utt_id:
         column: 0
         re_match: "wavs/(.*).wav"
-        re_path: "\\1.wav"
+        re_path: "wavs/\\1.wav"
         re_id: "\\1"
     utt_text:
         column: 2
@@ -45,9 +45,9 @@ text:
     eos_symbols: "#"
 
 audio:
-    sample_rate: 16000
-    hop_length: 0.010
-    win_length: 0.035
+    sample_rate: 22050
+    hop_length: 256
+    win_length: 1024
     num_mels: 80
     fmin: 50
     fmax: 7600
@@ -55,16 +55,17 @@ audio:
 model:
     encoder:
         type: "tacotron2"
-        dim_emb: 256    # 512
-        dim_out: 256    # 512
+        dim_emb: 512
+        dim_out: 512
     decoder:
         type: "tacotron2"
-        r: 2            # 1
+        r: 1
         dim_pre: 256
-        dim_att: 256
-        dim_rnn: [512, 512]    # [1024, 1024]
+        dim_att: 1024
+        dim_rnn: [1024, 1024]
     postnet:
-        dim_hidden: 256 # 512
+        type: tacotron2
+        dim_hidden: 512
         num_layers: 3
     # output:
     #     scale: 80

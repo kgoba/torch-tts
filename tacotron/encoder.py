@@ -57,7 +57,7 @@ class Encoder2(nn.Module):
         )
         # self.ln = nn.LayerNorm([self.dim_emb])
 
-        self.rnn = BiDiLSTMSplit(dim_emb * 2, dim_out // 2, bias=False)
+        self.rnn = BiDiLSTM(dim_emb * 2, dim_out // 2, bias=False)
         self.rnn_h0 = nn.Parameter(torch.zeros(1, 1, dim_out))
         self.rnn_c0 = nn.Parameter(torch.zeros(1, 1, dim_out))
 

@@ -114,7 +114,7 @@ class StepwiseMonotonicAttention(nn.Module):
         # if cmask is not None:
         #     e.masked_fill_(~cmask, 1e12)
 
-        e[:, -1] = 1e12
+        e[:, -1] = 1e4
         p0 = isru_sigmoid(e)  # e.sigmoid()
         w0 = w * p0
         w1 = w * (1 - p0)
@@ -122,8 +122,8 @@ class StepwiseMonotonicAttention(nn.Module):
         w = w0
         w[:, 1:] += w1[:, :-1]
 
-        ctx = torch.bmm(w.unsqueeze(1), memory).squeeze(1)
-        return ctx, w
+        # ctx = torch.bmm(w.unsqueeze(1), memory).squeeze(1)
+        return w
 
 
 class MultiHeadAttention(nn.Module):

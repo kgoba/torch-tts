@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from decoder_cell import DecoderCell, Taco1DecoderCell, Taco2DecoderCell
+from decoder_cell import Taco2ProdDecoderCell, Taco1DecoderCell, Taco2DecoderCell
 from decoder import Decoder
 from encoder import Encoder, Encoder2
 from modules.modules import MelPostnet, MelPostnet2
@@ -162,7 +162,7 @@ def build_tacotron(config):
     elif decoder_config["type"] == "tacotron2":
         decoder_cell_class = Taco2DecoderCell
     else:
-        decoder_cell_class = DecoderCell
+        decoder_cell_class = Taco2ProdDecoderCell
 
     decoder_cell = decoder_cell_class(
         encoder_config["dim_out"],
