@@ -75,7 +75,7 @@ class Taco2DecoderCell(nn.Module):
             dim_mel, dim_pre, always_dropout=True, p_dropout=0.5, dim_hidden=128
         )
         self.attention_module = StepwiseMonotonicAttention(
-            dim_ctx, sum(dim_rnn) + dim_ctx
+            sum(dim_rnn) + dim_ctx, dim_ctx
         )
 
         rnn_dims = [dim_pre] + dim_rnn
@@ -149,8 +149,8 @@ class Taco2ProdDecoderCell(nn.Module):
         dim_dec_hidden = dim_rnn[1]
         self.dim_output = dim_dec_hidden + dim_ctx
 
-        self.pre_net = PreNet(dim_mel, dim_pre, always_dropout=True, dim_hidden=128)
-        self.attention_module = StepwiseMonotonicAttention(dim_ctx, dim_att_hidden)
+        self.pre_net = PreNet(dim_mel, dim_pre, always_dropout=True, dim_hidden=dim_pre)
+        self.attention_module = StepwiseMonotonicAttention(dim_att_hidden, dim_ctx)
         self.attention_rnn = LSTMZoneoutCell(
             dim_pre + dim_ctx, dim_att_hidden, p_zoneout=p_zoneout
         )
@@ -158,8 +158,8 @@ class Taco2ProdDecoderCell(nn.Module):
             dim_att_hidden + dim_ctx, dim_dec_hidden, p_zoneout=p_zoneout
         )
 
-        self.initial_decoder_h = torch.zeros(1, dim_dec_hidden)
-        self.initial_decoder_c = torch.zeros(1, dim_dec_hidden)
+        self.initial_decoder_h = nn.ParameterList([torch.zeros(1, dim_att_hidden), torch.zeros(1, dim_dec_hidden)])
+        self.initial_decoder_c = nn.ParameterList([torch.zeros(1, dim_att_hidden), torch.zeros(1, dim_dec_hidden)])
         self.initial_ctx_0 = torch.zeros(1, dim_ctx)
 
     def initial_state(self, batch_size, memory_size, dtype, device):
@@ -167,30 +167,29 @@ class Taco2ProdDecoderCell(nn.Module):
         w_0 = initial_att_weights(batch_size, memory_size).to(
             dtype=dtype, device=device
         )
-        h_dec_0 = (
-            self.initial_decoder_h.to(dtype=dtype, device=device).expand(
-                batch_size, -1
-            ),
-            self.initial_decoder_c.to(dtype=dtype, device=device).expand(
-                batch_size, -1
-            ),
-        )
         ctx_0 = self.initial_ctx_0.to(dtype=dtype, device=device).expand(batch_size, -1)
-
-        return w_0, ctx_0, h_dec_0
+        h_rnn_0 = [
+            (
+                h.to(dtype=dtype, device=device).expand(batch_size, -1),
+                c.to(dtype=dtype, device=device).expand(batch_size, -1),
+            )
+            for h, c in zip(self.initial_decoder_h, self.initial_decoder_c)
+        ]
+        return w_0, ctx_0, h_rnn_0
 
     def forward(self, x, dec_state, memory, mmask):
-        # type: (Tensor, Tuple[Tensor, Tuple[Tensor, Tensor], List[Tuple[Tensor, Tensor]]], Tensor, Optional[Tensor]) -> Tuple[Tensor, Tuple[Tensor, Tuple[Tensor, Tensor], List[Tuple[Tensor, Tensor]]]]
         # x:      [B, r, D_mel]
         # memory: [B, L, D_ctx]
-        w_att, ctx_att, h_att, h_dec = dec_state[0], dec_state[1], dec_state[2], dec_state[3]
+        w_att, ctx_att, (h_att, h_dec) = dec_state[0], dec_state[1], dec_state[2]
 
         x_pre = self.pre_net(x.flatten(1, 2))  # [B, D_pre]
-        h_att = self.attention_rnn(torch.cat([x_pre, ctx_att], dim=1), h_att)
-        w_att = self.attention_module(h_att, w_att, memory, mmask)  # [B, L]
-        ctx_att = torch.bmm(w_att.unsqueeze(1), memory).squeeze(1)  # [B, D_ctx]
-        h_dec = self.decoder_rnn(torch.cat([h_att, ctx_att], dim=1), h_dec)
-        x_dec = torch.cat([h_dec, ctx_att], dim=1)
 
-        dec_state = w_att, ctx_att, h_att, h_dec
+        h_att = self.attention_rnn(torch.cat([x_pre, ctx_att], dim=1), h_att)
+        w_att = self.attention_module(h_att[0], w_att, memory, mmask)  # [B, L]
+        ctx_att = torch.bmm(w_att.unsqueeze(1), memory).squeeze(1)  # [B, D_ctx]
+
+        h_dec = self.decoder_rnn(torch.cat([h_att[0], ctx_att], dim=1), h_dec)
+        x_dec = torch.cat([h_dec[0], ctx_att], dim=1)
+
+        dec_state = w_att, ctx_att, (h_att, h_dec)
         return x_dec, ctx_att, dec_state

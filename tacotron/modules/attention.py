@@ -94,7 +94,7 @@ class ContentMarkovAttention(nn.Module):
 
 
 class StepwiseMonotonicAttention(nn.Module):
-    def __init__(self, dim_context, dim_input, sigmoid_noise=1.0):
+    def __init__(self, dim_input, dim_context, sigmoid_noise=1.0):
         super().__init__()
         self.sigmoid_noise = sigmoid_noise
         self.query_layer = nn.Linear(dim_input, dim_context, bias=False)

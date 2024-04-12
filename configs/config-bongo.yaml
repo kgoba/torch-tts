@@ -58,7 +58,7 @@ model:
         dim_emb: 512
         dim_out: 512
     decoder:
-        type: "tacotron2"
+        type: "tacotron2prod"
         r: 1
         dim_pre: 256
         dim_att: 1024
