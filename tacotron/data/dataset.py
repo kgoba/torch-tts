@@ -91,7 +91,6 @@ class TacotronDatasetHDF5(torch.utils.data.Dataset):
         self.data_path = data_path
         with h5py.File(data_path, "r") as fs:
             self.utt_ids = [x for x in fs.keys()]
-            # self.utt_ids = [x for x in fs.keys() if len(fs.get(f"{x}/mel")[()]) < max_frames]
         self.fs = None
         self.max_frames = max_frames
 
@@ -156,8 +155,6 @@ def build_dataset(dataset_path, config, cache_path=None) -> TacotronDataset:
         id_column=dataset_config["utt_id"]["column"],
         text_column=dataset_config["utt_text"]["column"],
     )
-    # if dataset_config["phonemized"]:
-    #     audio_dataset =
 
     audio_config = AudioFrontendConfig()
     audio_config.from_json(config["audio"])

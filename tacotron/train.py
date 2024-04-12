@@ -1,6 +1,6 @@
 import torch
 import yaml, os, sys, logging
-import pytorch_lightning as pl
+import lightning as L
 
 from data.dataset import collate_fn, build_dataset_hdf5
 from data.sampler import LengthBucketRandomSampler, RandomBatchSampler
@@ -37,17 +37,18 @@ def train(args, model, dataset, device):
     )
 
     torch.set_float32_matmul_precision('medium')
+    torch.backends.cudnn.enabled = True
 
     if args.lightning:
         task = TacotronTask(model, lr=args.lr, extra_loss=args.finetune)
-        logger = pl.loggers.tensorboard.TensorBoardLogger(save_dir="lightning_logs", version=0)
-        checkpoint_callback = pl.callbacks.ModelCheckpoint(
+        logger = L.pytorch.loggers.TensorBoardLogger(save_dir="lightning_logs", version=0)
+        checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(
             dirpath="checkpoints",
             save_last=True,
             # every_n_train_steps=10,
             every_n_epochs=1,
         )
-        trainer = pl.Trainer(
+        trainer = L.Trainer(
             logger=logger,
             callbacks=[checkpoint_callback],
             accelerator="cpu" if args.cpu else "auto",

@@ -21,6 +21,9 @@ class LengthBucketRandomSampler(Sampler[int]):
         self.bucket_size = bucket_size
         self.len_fn = len_fn
         self.generator = generator
+        self.len_idx = sorted(
+            [(self.len_fn(self.data_source[idx]), idx) for idx in range(len(self.data_source))]
+        )
 
     # @property
     # def num_samples(self) -> int:
@@ -37,16 +40,10 @@ class LengthBucketRandomSampler(Sampler[int]):
             generator = self.generator
 
         print(f"Bucketizing {len(self.data_source)} samples")
-        len_idx = sorted(
-            [(self.len_fn(self.data_source[idx]), idx) for idx in range(len(self.data_source))]
-        )
-        # len_idx = sorted(
-        #     range(len(self.data_source)), key=lambda idx: self.len_fn(self.data_source[idx])
-        # )
         pos = 0
         while pos < len(self.data_source):
             pos2 = min(pos + self.bucket_size, len(self.data_source))
-            bucket = len_idx[pos:pos2]
+            bucket = self.len_idx[pos:pos2]
             random.shuffle(bucket)
             # print(f"Min {min([x[0] for x in bucket])} Max {max([x[0] for x in bucket])}")
             yield from [x[1] for x in bucket]

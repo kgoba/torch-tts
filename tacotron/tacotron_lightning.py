@@ -1,5 +1,5 @@
 import torch
-import pytorch_lightning as pl
+import lightning as L
 import matplotlib.pyplot as plt
 
 from tacotron import lengths_to_mask, mel_loss_fn, alignment_std_loss
@@ -16,7 +16,7 @@ def plot_attention(w):
     return fig
 
 
-class TacotronTask(pl.LightningModule):
+class TacotronTask(L.LightningModule):
     def __init__(self, model, lr, extra_loss=False):
         super().__init__()
         self.model = model
@@ -29,7 +29,7 @@ class TacotronTask(pl.LightningModule):
     def get_tb_logger(self):
         # Get tensorboard logger
         for logger in self.loggers:
-            if isinstance(logger, pl.loggers.TensorBoardLogger):
+            if isinstance(logger, L.pytorch.loggers.TensorBoardLogger):
                 return logger.experiment
 
     def predict_forward(self, text_encoder, text_batch, xref=None, max_steps=400):
