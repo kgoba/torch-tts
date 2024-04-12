@@ -46,7 +46,11 @@ def load_state_dict(model, state_dict):
 
 
 def grad_norm(model):
-    grads = [param.grad.detach().flatten() for param in model.parameters() if param.grad != None]
+    grads = [
+        param.grad.detach().flatten()
+        for param in model.parameters()
+        if param.grad != None
+    ]
     if grads:
         return torch.cat(grads).norm()
 
@@ -122,6 +126,7 @@ def optimizer_to(optim, device):
                     if subparam._grad is not None:
                         subparam._grad.data = subparam._grad.data.to(device)
 
+
 class ModelWrapper(nn.Module):
     def __init__(self, model):
         super().__init__()
@@ -132,7 +137,9 @@ class ModelWrapper(nn.Module):
 
 
 class Trainer:
-    def __init__(self, model: torch.nn.Module, checkpoint_dir: str, step: int = 0, lr=5e-4):
+    def __init__(
+        self, model: torch.nn.Module, checkpoint_dir: str, step: int = 0, lr=5e-4
+    ):
         self.model = model
         self.checkpoint_dir = checkpoint_dir
         os.makedirs(self.checkpoint_dir, exist_ok=True)
@@ -140,7 +147,9 @@ class Trainer:
         self.step = step
         self.lr = lr
 
-        self.optimizer = torch.optim.AdamW(model.parameters(), lr=self.lr) # , amsgrad=True)
+        self.optimizer = torch.optim.AdamW(
+            model.parameters(), lr=self.lr
+        )  # , amsgrad=True)
         # self.optimizer = torch.optim.NAdam(model.parameters(), lr=self.lr, momentum_decay=0)
         # self.optimizer = torch.optim.RMSprop(model.parameters(), lr=self.lr)
         # self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=100)
@@ -176,26 +185,30 @@ class Trainer:
 
     def load_checkpoint(self, path):
         logger.info(f"Loading checkpoint from {path}")
-        checkpoint = torch.load(path, map_location=torch.device('cpu'))
+        checkpoint = torch.load(path, map_location=torch.device("cpu"))
         # print(checkpoint["optimizer_states"])
         # self.step = checkpoint["step"]
         self.step = checkpoint["global_step"]
         wrapper = ModelWrapper(self.model)
         try:
             # assert False
-            wrapper.load_state_dict(checkpoint["state_dict"]) #, strict=False)
+            wrapper.load_state_dict(checkpoint["state_dict"])  # , strict=False)
             # self.model.load_state_dict(checkpoint["model_state"], strict=False)
             self.optimizer.load_state_dict(checkpoint["optimizer_states"][0])
             # self.optimizer.load_state_dict(checkpoint["optimizer_state"])
             for g in self.optimizer.param_groups:
                 g["lr"] = self.lr
         except:
-            logger.warning("Failed to load model properly, attempting to load partially")
+            logger.warning(
+                "Failed to load model properly, attempting to load partially"
+            )
             load_state_dict(self.model, checkpoint["model_state"])
             logger.warning("Optimizer state not restored")
         logger.info(f"Training steps: {self.step}")
 
-    def train(self, train_loader, test_loader, device, num_epochs=600, optimizer_interval=1):
+    def train(
+        self, train_loader, test_loader, device, num_epochs=600, optimizer_interval=1
+    ):
         if os.path.exists(self.checkpoint_path):
             self.load_checkpoint(self.checkpoint_path)
 
@@ -226,7 +239,9 @@ class Trainer:
             #     self.save_checkpoint(model_path)
 
             w_test = loss_dict["w"]
-            alignment_path = os.path.join(self.checkpoint_dir, f"alignment_{self.step}.png")
+            alignment_path = os.path.join(
+                self.checkpoint_dir, f"alignment_{self.step}.png"
+            )
             fig = plt.figure()
             axes = fig.add_subplot(1, 1, 1)
             axes.imshow(np.power(w_test[0].numpy(), 0.25).T, origin="lower")

@@ -7,6 +7,7 @@ from modules.rnn import reverse_padded, BiDiLSTM, BiDiLSTMSplit
 from mps_fixes.mps_fixes import Conv1dFix
 from data.util import lengths_to_mask
 
+
 class Encoder(nn.Module):
     def __init__(self, alphabet_size, dim_out=256, dim_emb=256):
         super().__init__()

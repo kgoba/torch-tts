@@ -13,7 +13,9 @@ class Decoder(nn.Module):
         self.fc_mel = nn.Linear(decoder_cell.dim_output, self.r * self.dim_mel)
         self.fc_stop = nn.Linear(decoder_cell.dim_output, self.r)
 
-    def forward(self, memory, mmask, x=None, max_steps: int = 0, p_no_forcing: float = None):
+    def forward(
+        self, memory, mmask, x=None, max_steps: int = 0, p_no_forcing: float = None
+    ):
         # memory: B x L x D_enc
         # x:      B x T x D_mel
         B = memory.shape[0]  # batch size
@@ -63,7 +65,9 @@ class Decoder(nn.Module):
                 if not p_no_forcing or torch.rand(1) > p_no_forcing:
                     y_t = x_split[step - 1]  # B x r x D_mel
             else:
-                if torch.any(s_t < self.stop_threshold) or (max_steps and (step > max_steps)):
+                if torch.any(s_t < self.stop_threshold) or (
+                    max_steps and (step > max_steps)
+                ):
                     break
 
         y = torch.cat(y, dim=1)  # B x T x D_mel

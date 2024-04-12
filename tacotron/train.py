@@ -28,20 +28,28 @@ def train(args, model, dataset, device):
         drop_last=True,
     )
     train_loader = torch.utils.data.DataLoader(
-        train_dataset, collate_fn=collate_fn, batch_sampler=train_batch_sampler,
+        train_dataset,
+        collate_fn=collate_fn,
+        batch_sampler=train_batch_sampler,
         num_workers=2,
-        pin_memory=True
+        pin_memory=True,
     )
     test_loader = torch.utils.data.DataLoader(
-        test_dataset, collate_fn=collate_fn, batch_size=args.eval_batch_size
+        test_dataset,
+        collate_fn=collate_fn,
+        batch_size=args.eval_batch_size,
+        num_workers=2,
+        pin_memory=True,
     )
 
-    torch.set_float32_matmul_precision('medium')
+    torch.set_float32_matmul_precision("medium")
     torch.backends.cudnn.enabled = True
 
     if args.lightning:
         task = TacotronTask(model, lr=args.lr, extra_loss=args.finetune)
-        logger = L.pytorch.loggers.TensorBoardLogger(save_dir="lightning_logs", version=0)
+        logger = L.pytorch.loggers.TensorBoardLogger(
+            save_dir="lightning_logs", version=0
+        )
         checkpoint_callback = L.pytorch.callbacks.ModelCheckpoint(
             dirpath="checkpoints",
             save_last=True,
@@ -58,11 +66,16 @@ def train(args, model, dataset, device):
             # limit_train_batches=100,
         )
         trainer.fit(
-            task, train_dataloaders=train_loader, val_dataloaders=test_loader, ckpt_path="last"
+            task,
+            train_dataloaders=train_loader,
+            val_dataloaders=test_loader,
+            ckpt_path="last",
         )
     else:
         trainer = Trainer(model, args.run_dir, lr=args.lr)
-        trainer.train(train_loader, test_loader, device, optimizer_interval=args.opt_interval)
+        trainer.train(
+            train_loader, test_loader, device, optimizer_interval=args.opt_interval
+        )
 
 
 def filter(args, model, dataset, device):
@@ -120,20 +133,36 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("dataset", help="Dataset path")
     parser.add_argument("config", help="Configuration file")
-    parser.add_argument("--run", default="run_default", help="Training run path", dest="run_dir")
+    parser.add_argument(
+        "--run", default="run_default", help="Training run path", dest="run_dir"
+    )
     parser.add_argument("--data", help="Data file path", dest="data_path")
     parser.add_argument("--precision", help="Training precision", default="32")
-    parser.add_argument("--batch-size", help="Training batch size", type=int, default=32)
-    parser.add_argument("--eval-batch-size", help="Validation batch size", type=int, default=20)
-    parser.add_argument("--eval-size", help="Validation dataset size", type=int, default=80)
+    parser.add_argument(
+        "--batch-size", help="Training batch size", type=int, default=32
+    )
+    parser.add_argument(
+        "--eval-batch-size", help="Validation batch size", type=int, default=20
+    )
+    parser.add_argument(
+        "--eval-size", help="Validation dataset size", type=int, default=80
+    )
     parser.add_argument(
         "--opt-interval", help="Optimizer accumulation interval", type=int, default=1
     )
-    parser.add_argument("--max-audio-frames", help="Limit audio frames", type=int, default=None)
-    parser.add_argument("--cpu", action="store_true", help="Force using CPU for training")
+    parser.add_argument(
+        "--max-audio-frames", help="Limit audio frames", type=int, default=None
+    )
+    parser.add_argument(
+        "--cpu", action="store_true", help="Force using CPU for training"
+    )
     parser.add_argument("--lr", default=1e-3, type=float, help="Learning rate")
-    parser.add_argument("--lightning", action="store_true", help="Use Lightning for training")
-    parser.add_argument("--finetune", action="store_true", help="Finetuning with extra loss")
+    parser.add_argument(
+        "--lightning", action="store_true", help="Use Lightning for training"
+    )
+    parser.add_argument(
+        "--finetune", action="store_true", help="Finetuning with extra loss"
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)

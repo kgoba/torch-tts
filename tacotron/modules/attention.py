@@ -141,9 +141,13 @@ class MultiHeadAttention(nn.Module):
         self.num_heads = num_heads
         self.d_gain = 1 / (key_dim**0.5)
 
-        self.W_query = nn.Linear(in_features=query_dim, out_features=num_units, bias=False)
+        self.W_query = nn.Linear(
+            in_features=query_dim, out_features=num_units, bias=False
+        )
         self.W_key = nn.Linear(in_features=key_dim, out_features=num_units, bias=False)
-        self.W_value = nn.Linear(in_features=key_dim, out_features=num_units, bias=False)
+        self.W_value = nn.Linear(
+            in_features=key_dim, out_features=num_units, bias=False
+        )
 
     def forward(self, query, key, key_mask=None):
         querys = self.W_query(query)  # [N, T_q, num_units]
@@ -154,13 +158,17 @@ class MultiHeadAttention(nn.Module):
         querys = torch.stack(
             torch.split(querys, split_size, dim=2), dim=0
         )  # [h, N, T_q, num_units/h]
-        keys = torch.stack(torch.split(keys, split_size, dim=2), dim=0)  # [h, N, T_k, num_units/h]
+        keys = torch.stack(
+            torch.split(keys, split_size, dim=2), dim=0
+        )  # [h, N, T_k, num_units/h]
         values = torch.stack(
             torch.split(values, split_size, dim=2), dim=0
         )  # [h, N, T_k, num_units/h]
 
         # score = softmax(QK^T / (d_k ** 0.5))
-        scores = self.d_gain * torch.matmul(querys, keys.transpose(2, 3))  # [h, N, T_q, T_k]
+        scores = self.d_gain * torch.matmul(
+            querys, keys.transpose(2, 3)
+        )  # [h, N, T_q, T_k]
         if key_mask != None:
             scores.masked_fill_(~(key_mask.unsqueeze(0).unsqueeze(2)), -1e6)
         scores = nn.functional.softmax(scores, dim=3)
@@ -171,6 +179,8 @@ class MultiHeadAttention(nn.Module):
 
         # out = score * V
         out = torch.matmul(scores, values)  # [h, N, T_q, num_units/h]
-        out = torch.cat(torch.split(out, 1, dim=0), dim=3).squeeze(0)  # [N, T_q, num_units]
+        out = torch.cat(torch.split(out, 1, dim=0), dim=3).squeeze(
+            0
+        )  # [N, T_q, num_units]
 
         return out

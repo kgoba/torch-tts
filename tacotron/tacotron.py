@@ -98,11 +98,15 @@ def alignment_std_loss(w):
 
 
 def run_training_step(model, batch, device):
-    c, c_lengths, x, x_lengths = [t.to(device) for t in batch if isinstance(t, torch.Tensor)]
+    c, c_lengths, x, x_lengths = [
+        t.to(device) for t in batch if isinstance(t, torch.Tensor)
+    ]
 
     xmask = lengths_to_mask(x_lengths).unsqueeze(2)
 
-    y, y_post, s, out_dict = model(c, c_lengths, x, x_lengths, xref=x, xref_lengths=x_lengths)
+    y, y_post, s, out_dict = model(
+        c, c_lengths, x, x_lengths, xref=x, xref_lengths=x_lengths
+    )
     T = y.shape[1]
     x, xmask = x[:, :T, :], xmask[:, :T]
 
@@ -134,13 +138,17 @@ def run_training_step(model, batch, device):
     }
 
 
-def run_inference_step(model, text_encoder, text_batch, device, xref=None, max_steps=400):
+def run_inference_step(
+    model, text_encoder, text_batch, device, xref=None, max_steps=400
+):
     with torch.no_grad():
         encoded_text = [text_encoder.encode(text) for text in text_batch]
         c_lengths = torch.LongTensor([len(text) for text in encoded_text])
         c = [torch.LongTensor(text) for text in encoded_text]
         c = torch.nn.utils.rnn.pad_sequence(c, batch_first=True)
-        xref_lengths = torch.LongTensor([len(x) for x in xref]) if xref != None else None
+        xref_lengths = (
+            torch.LongTensor([len(x) for x in xref]) if xref != None else None
+        )
 
         # input = input.to(device, non_blocking=True)
         y, y_post, s, out_dict = model(
@@ -148,7 +156,10 @@ def run_inference_step(model, text_encoder, text_batch, device, xref=None, max_s
         )
 
         # model_traced = torch.jit.trace(model, (input, imask)) # Export to TorchScript
-        return y_post.detach().cpu(), {"s": s.detach().cpu(), "w": out_dict["w"].detach().cpu()}
+        return y_post.detach().cpu(), {
+            "s": s.detach().cpu(),
+            "w": out_dict["w"].detach().cpu(),
+        }
 
 
 def build_tacotron(config):
@@ -205,8 +216,7 @@ def build_tacotron(config):
     style_encoder_config = config["model"].get("style_encoder")
     if style_encoder_config:
         refencoder = VAE(
-            num_mels=audio_config["num_mels"],
-            dim_vae=style_encoder_config["dim_vae"]
+            num_mels=audio_config["num_mels"], dim_vae=style_encoder_config["dim_vae"]
         )
     else:
         refencoder = None

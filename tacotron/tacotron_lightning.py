@@ -8,7 +8,7 @@ from tacotron import lengths_to_mask, mel_loss_fn, alignment_std_loss
 
 
 def plot_attention(w):
-    fig, ax = plt.subplots(figsize=(10, 4), layout='tight')
+    fig, ax = plt.subplots(figsize=(10, 4), layout="tight")
     im = ax.imshow(w, aspect="equal", origin="lower", interpolation="none")
     # plt.colorbar(im, ax=ax)
     fig.canvas.draw()
@@ -37,9 +37,13 @@ class TacotronTask(L.LightningModule):
         c_lengths = torch.LongTensor([len(text) for text in encoded_text])
         c = [torch.LongTensor(text) for text in encoded_text]
         c = torch.nn.utils.rnn.pad_sequence(c, batch_first=True)
-        xref_lengths = torch.LongTensor([len(x) for x in xref]) if xref != None else None
+        xref_lengths = (
+            torch.LongTensor([len(x) for x in xref]) if xref != None else None
+        )
 
-        y, y_post, s, out_dict = self.model(c, c_lengths, xref=xref, xref_lengths=xref_lengths)
+        y, y_post, s, out_dict = self.model(
+            c, c_lengths, xref=xref, xref_lengths=xref_lengths
+        )
 
         return y_post.detach().cpu()
 
@@ -59,7 +63,9 @@ class TacotronTask(L.LightningModule):
         loss_mel_post = mel_loss_fn(y_post, x, xmask, order=1)
 
         loss_dmel = mel_loss_fn(y.diff(dim=1), x.diff(dim=1), xmask[:, 1:], order=1)
-        loss_dmel_post = mel_loss_fn(y_post.diff(dim=1), x.diff(dim=1), xmask[:, 1:], order=1)
+        loss_dmel_post = mel_loss_fn(
+            y_post.diff(dim=1), x.diff(dim=1), xmask[:, 1:], order=1
+        )
 
         pos_weight = torch.Tensor([0.1]).to(device=s.device)
         loss_stop = torch.nn.functional.binary_cross_entropy_with_logits(
@@ -113,9 +119,13 @@ class TacotronTask(L.LightningModule):
         tb_logger = self.get_tb_logger()
         if tb_logger != None:
             tb_logger.add_figure(
-                f"train/w_{batch_idx}", plot_attention(img_dict["w"][0].mT), self.global_step
+                f"train/w_{batch_idx}",
+                plot_attention(img_dict["w"][0].mT),
+                self.global_step,
             )
             tb_logger.add_figure(
-                f"train/yp_{batch_idx}", plot_attention(img_dict["y_post"][0,:500].mT), self.global_step
+                f"train/yp_{batch_idx}",
+                plot_attention(img_dict["y_post"][0, :500].mT),
+                self.global_step,
             )
         return loss

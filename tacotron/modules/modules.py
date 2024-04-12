@@ -78,7 +78,11 @@ class CBHG(nn.Module):
             [
                 nn.Sequential(
                     nn.Conv1d(
-                        dim_input, dim_conv_hidden, kernel_size=k, padding=k // 2, bias=False
+                        dim_input,
+                        dim_conv_hidden,
+                        kernel_size=k,
+                        padding=k // 2,
+                        bias=False,
                     ),
                     nn.ReLU(),
                     nn.BatchNorm1d(dim_conv_hidden),
@@ -100,9 +104,11 @@ class CBHG(nn.Module):
             nn.Conv1d(dim_proj_hidden, dim_input, padding=1, kernel_size=3),
         )
         self.highway = nn.Sequential(
-            nn.Linear(dim_input, dim_highway, bias=False)
-            if dim_input != dim_highway
-            else nn.Identity(),
+            (
+                nn.Linear(dim_input, dim_highway, bias=False)
+                if dim_input != dim_highway
+                else nn.Identity()
+            ),
             HighwayLayer(dim_highway),
             HighwayLayer(dim_highway),
             HighwayLayer(dim_highway),
@@ -110,7 +116,10 @@ class CBHG(nn.Module):
         )
         dim_rnn = dim_output // 2
         self.rnn = nn.GRU(
-            input_size=dim_highway, hidden_size=dim_rnn, bidirectional=True, batch_first=True
+            input_size=dim_highway,
+            hidden_size=dim_rnn,
+            bidirectional=True,
+            batch_first=True,
         )
         # self.fc = nn.Linear(2 * dim_rnn, dim_output)
         self.rnn.flatten_parameters()
@@ -152,7 +161,13 @@ class MelPostnet(nn.Module):
         self.conv = nn.ModuleList(
             [
                 nn.Sequential(
-                    nn.Conv1d(ch_in, ch_out, kernel_size=kernel_size, padding=padding, bias=False),
+                    nn.Conv1d(
+                        ch_in,
+                        ch_out,
+                        kernel_size=kernel_size,
+                        padding=padding,
+                        bias=False,
+                    ),
                     nn.BatchNorm1d(ch_out),
                 )
                 for ch_in, ch_out in zip(conv_dims[:-1], conv_dims[1:])
@@ -181,7 +196,9 @@ class MelPostnet2(nn.Module):
                     nn.BatchNorm1d(dim_hidden),
                     nn.LeakyReLU(),
                     nn.Dropout(0.2),
-                    Conv1dFix(dim_hidden, dim_hidden, kernel_size=5, padding=2, bias=False),
+                    Conv1dFix(
+                        dim_hidden, dim_hidden, kernel_size=5, padding=2, bias=False
+                    ),
                     nn.BatchNorm1d(dim_hidden),
                     nn.LeakyReLU(),
                     nn.Dropout(0.2),

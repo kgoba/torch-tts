@@ -29,6 +29,7 @@ class TextEncoder:
         self.eos = eos
         self.alphabet = alphabet
         self.lookup = {c: (i + base_index) for i, c in enumerate(alphabet)}
+        self.unk_chars = set()
 
     def prepare(self, text):
         text = text.lower()
@@ -49,26 +50,33 @@ class TextEncoder:
             encoded = [self.lookup[c] if c in self.lookup else encode_unk for c in text]
         else:
             encoded = [self.lookup[c] for c in text if c in self.lookup]
-            unk_chars = ""
             for c in text:
                 if not c in self.lookup:
-                    unk_chars += c
-            if unk_chars:
-                logger.warning(f"Unknown characters: {unk_chars}")
+                    if not c in self.unk_chars:
+                        self.unk_chars.add(c)
+                        logger.warning(f"Unknown character: [{c}]")
         return encoded
 
     def decode(self, enc, decode_unk=None):
         if decode_unk:
             return [
-                self.alphabet[i - 1] if i > 0 and i <= len(self.alphabet) else decode_unk
+                (
+                    self.alphabet[i - 1]
+                    if i > 0 and i <= len(self.alphabet)
+                    else decode_unk
+                )
                 for i in enc
             ]
         else:
-            return [self.alphabet[i - 1] for i in enc if i > 0 and i <= len(self.alphabet)]
+            return [
+                self.alphabet[i - 1] for i in enc if i > 0 and i <= len(self.alphabet)
+            ]
 
 
 class MixedTextEncoder:
-    def __init__(self, graphemes, phonemes, char_map=None, bos=None, eos=None, p_graphemes=0.3):
+    def __init__(
+        self, graphemes, phonemes, char_map=None, bos=None, eos=None, p_graphemes=0.3
+    ):
         self.g_encoder = TextEncoder(graphemes, char_map, base_index=1)
         self.p_encoder = TextEncoder(phonemes, char_map, base_index=1 + len(graphemes))
         self.bos = bos
@@ -95,8 +103,14 @@ class MixedTextEncoder:
     def decode(self, enc, decode_unk=None):
         if decode_unk:
             return [
-                self.alphabet[i - 1] if i > 0 and i <= len(self.alphabet) else decode_unk
+                (
+                    self.alphabet[i - 1]
+                    if i > 0 and i <= len(self.alphabet)
+                    else decode_unk
+                )
                 for i in enc
             ]
         else:
-            return [self.alphabet[i - 1] for i in enc if i > 0 and i <= len(self.alphabet)]
+            return [
+                self.alphabet[i - 1] for i in enc if i > 0 and i <= len(self.alphabet)
+            ]

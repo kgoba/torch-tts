@@ -1,6 +1,5 @@
-import yaml, os, sys, logging
+import yaml, sys, logging
 from tqdm.auto import tqdm
-import numpy as np
 import torch
 
 from data.dataset import build_dataset
@@ -46,7 +45,9 @@ if __name__ == "__main__":
     parser.add_argument("dataset", help="Dataset path")
     parser.add_argument("config", help="Configuration file")
     parser.add_argument("--data", help="Data file path", dest="data_path")
-    parser.add_argument("--cpu", action="store_true", help="Force using CPU for training")
+    parser.add_argument(
+        "--cpu", action="store_true", help="Force using CPU for training"
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO)

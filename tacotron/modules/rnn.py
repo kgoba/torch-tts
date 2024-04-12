@@ -25,8 +25,12 @@ class LSTMZoneoutCell(nn.LSTMCell):
         h, c = super().forward(x, hidden)
         if self.training:
             if self.p_zoneout:
-                zoneout_h = torch.rand(self.hidden_size, device=h.device) < self.p_zoneout
-                zoneout_c = torch.rand(self.hidden_size, device=c.device) < self.p_zoneout
+                zoneout_h = (
+                    torch.rand(self.hidden_size, device=h.device) < self.p_zoneout
+                )
+                zoneout_c = (
+                    torch.rand(self.hidden_size, device=c.device) < self.p_zoneout
+                )
                 h = torch.where(zoneout_h, hidden[0], h)
                 c = torch.where(zoneout_c, hidden[1], c)
         else:
@@ -97,7 +101,9 @@ class BiDiLSTMSplit(nn.Module):
         f_h0, b_h0 = [t.contiguous() for t in torch.chunk(h0, 2, dim=-1)]
         f_c0, b_c0 = [t.contiguous() for t in torch.chunk(c0, 2, dim=-1)]
         x_f, (f_hn, _) = self.rnn_f(x, (f_h0, f_c0))  # B x T x D_rnn
-        x_b, (b_hn, _) = self.rnn_b(reverse_padded(x, x_lengths), (b_h0, b_c0))  # B x T x D_rnn
+        x_b, (b_hn, _) = self.rnn_b(
+            reverse_padded(x, x_lengths), (b_h0, b_c0)
+        )  # B x T x D_rnn
         x = torch.cat((x_f, reverse_padded(x_b, x_lengths)), dim=2)
         x.masked_fill_(mask.unsqueeze(2), value=0)
         return x, torch.cat([f_hn, b_hn], dim=2)

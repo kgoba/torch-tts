@@ -1,17 +1,17 @@
 seed: 42
 
 dataset:
-    transcript: "script"
+    transcript: "metadata.csv"
     utt_id:
         column: 0
-        re_match: "wavs/(.*).wav"
+        re_match: "(.*)"
         re_path: "wavs/\\1.wav"
         re_id: "\\1"
     utt_text:
         column: 2
 
 text:
-    alphabet: "# abcdefghijklmnopqrstuvwxyzéžčķģļņ_-:;,.!?()\"'"
+    alphabet: "#abcdefghijklmnopqrstuvwxyz -:;,.!?()\"'"           # E
     # alphabet: "abcdefghijklmnopqrstuvwxyz#-:;,.!?()\"' é"             # nl
     # alphabet: "#%_abcdefghijklmnopqrstuvwxyz-:;,.!?()\"' ːˈäʒǯšžčķģļņ"  # lv (semiphonemic)
     character_map: [
@@ -20,12 +20,12 @@ text:
         ["[‐‑‒–—―⁃−]", "-"],
         ["[…]", "..."],
         # nl
-        # ["[ç]", "c"],
-        # ["[àáã]", "a"],
-        # ["[èêëé]", "e"],
-        # ["[îïï]", "i"],
-        # ["[óö]", "o"],
-        # ["[úûü]", "u"],
+        ["[ç]", "c"],
+        ["[àáâäã]", "a"],
+        ["[èéêë]", "e"],
+        ["[ìíîïï]", "i"],
+        ["[òóôö]", "o"],
+        ["[ùúûü]", "u"],
         # ["&", "en"],
         # en
         ["&", "and"],
