@@ -21,6 +21,7 @@ Unofficial implementation of the [VITS2 paper](https://arxiv.org/abs/2307.16430)
 ```sh
 # Cython-version Monotonoic Alignment Search
 cd monotonic_align
+mkdir monotonic_align
 python setup.py build_ext --inplace
 ```
 

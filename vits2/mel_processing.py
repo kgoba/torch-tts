@@ -143,7 +143,7 @@ def mel_spectrogram_torch(
         )
     if wnsize_dtype_device not in hann_window:
         hann_window[wnsize_dtype_device] = torch.hann_window(win_size).to(
-            dtype=y.dtype, device="cpu" # y.device
+            dtype=y.dtype, device=y.device
         )
 
     y = torch.nn.functional.pad(
@@ -155,7 +155,7 @@ def mel_spectrogram_torch(
 
     if version.parse(torch.__version__) >= version.parse("2"):
         spec = torch.stft(
-            y.to("cpu"),
+            y,
             n_fft,
             hop_length=hop_size,
             win_length=win_size,
@@ -165,7 +165,7 @@ def mel_spectrogram_torch(
             normalized=False,
             onesided=True,
             return_complex=False,
-        ).to(y.device)
+        )
     else:
         spec = torch.stft(
             y,

@@ -3,14 +3,14 @@ librosa==0.10.1
 matplotlib==3.9.2
 numpy==2.0.1
 numba==0.60.0
-# phonemizer==3.2.1
+# Unidecode==1.3.8
+# phonemizer==3.3.0
 scipy==1.14.0
 torch==2.4.0
 torchaudio==2.4.0
-# Unidecode==1.3.6
 tensorboard==2.17.1
 # onnx==1.14.1
 # onnxruntime==1.15.1
 # gradio
 lightning==2.4.0
-jsonargparse==4.32.0
+jsonargparse[signatures]==4.32.0

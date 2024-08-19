@@ -10,6 +10,7 @@ data:
   # validation_files: filelists/ljs_audio_text_val_filelist.txt.cleaned
   batch_size: 8
   config:
+    max_audio_len: 800
     cleaned_text: true
     use_mel_posterior_encoder: true
     hop_length: &hop_length 256
