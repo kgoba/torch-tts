@@ -1,0 +1,9 @@
+logs
+__pycache__
+.ipynb_checkpoints
+.*.swp
+
+monotonic_align/build
+monotonic_align/monotonic_align
+monotonic_align/*.c
+.venv/

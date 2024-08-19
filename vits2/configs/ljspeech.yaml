@@ -1,0 +1,54 @@
+# lightning.pytorch==2.4.0
+trainer:
+  # accelerator: cpu
+  max_epochs: 1
+data:
+  datasets:
+  - type: ljspeech
+    path: LJSpeech-1.1
+  # training_files: filelists/ljs_audio_text_train_filelist.txt.cleaned
+  # validation_files: filelists/ljs_audio_text_val_filelist.txt.cleaned
+  batch_size: 8
+  config:
+    cleaned_text: true
+    use_mel_posterior_encoder: true
+    hop_length: &hop_length 256
+    win_length: &win_length 1024
+    filter_length: &filter_length 1024
+    sampling_rate: &sampling_rate 22050
+    n_mel_channels: &n_mel_channels 80
+    symbols:
+      - ';:,.!?¡¿—…"«»“” '
+      - "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
+      - "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
+model:
+  config:
+    # inter_channels: 192
+    # hidden_channels: 192
+    # filter_channels: 768
+    # n_heads: 2
+    # n_layers: 6
+    # kernel_size: 3
+    # p_dropout: 0.1
+    # resblock: '1'
+    # resblock_kernel_sizes: [3, 7, 11]
+    # resblock_dilation_sizes: [[1, 3, 5], [1, 3, 5], [1, 3, 5]]
+    # upsample_rates: [8, 8, 2, 2]
+    # upsample_initial_channel: 512
+    # upsample_kernel_sizes: [16, 16, 4, 4]
+    n_speakers: 0
+    gin_channels: 0
+    use_sdp: true
+    use_spk_conditioned_encoder: false
+    use_transformer_flows: false
+    transformer_flow_type: mono_layer_post_residual
+    use_noise_scaled_mas: false
+    mas_noise_scale_initial: 0.01
+    noise_scale_delta: 2.0e-06
+
+    segment_size: 8192
+    # hop_length: *hop_length
+    # win_length: *win_length
+    # filter_length: *filter_length
+    # sampling_rate: *sampling_rate
+    # n_mel_channels: *n_mel_channels
