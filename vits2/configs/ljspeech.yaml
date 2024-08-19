@@ -1,7 +1,7 @@
 # lightning.pytorch==2.4.0
 trainer:
   # accelerator: cpu
-  max_epochs: 1
+  # max_epochs: 1
 data:
   datasets:
   - type: ljspeech

@@ -103,8 +103,10 @@ class ModelConfig:
     win_length: int = 1024
 
     segment_size: int = 8192
-    c_mel: float = 45.0
-    c_kl: float = 1.0
+    c_fm: float = 0.2
+    c_dur: float = 1.0
+    c_mel: float = 10.0
+    c_kl: float = 0.2
 
     inter_channels: int = 192
     hidden_channels: int = 192
@@ -276,11 +278,11 @@ class MyTrainingModule(LightningModule):
         loss_gen = torch.mean(losses_gen)
         loss_gen_all = (
             loss_gen
-            + loss_fm
-            + loss_dur
+            + (loss_fm * self.config.c_fm)
+            + (loss_dur * self.config.c_dur)
             + (loss_kl * self.config.c_kl)
             + (loss_mel * self.config.c_mel)
-        ) / (3 + self.config.c_kl + self.config.c_mel)
+        ) / (1 + self.config.c_fm + self.config.c_dur + self.config.c_kl + self.config.c_mel)
 
         g_opt.zero_grad()
         self.manual_backward(loss_gen_all)
@@ -397,6 +399,12 @@ class MyLightningCLI(LightningCLI):
 
 
 def cli_main():
+    try:
+        torch.set_float32_matmul_precision('medium')
+        logger.info("TensorCore activated")
+    except Exception as e:
+        logger.info("TensorCore not activated")
+        pass
     cli = MyLightningCLI(MyTrainingModule, MyDataModule)  # , BoringDataModule)
     # note: don't call fit!!
 
