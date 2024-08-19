@@ -4,7 +4,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
-from lightning.pytorch import LightningModule, LightningDataModule
+from lightning.pytorch import LightningModule, LightningDataModule, Callback, Trainer
 from lightning.pytorch.cli import LightningCLI
 import torch
 from torch.utils.data import DataLoader, ConcatDataset, random_split
@@ -24,8 +24,54 @@ from models import (
     MultiPeriodDiscriminator,
     SynthesizerTrn,
 )
+import utils
 
 logger = logging.getLogger(__name__)
+
+
+class TensorBoardEvalCallback(Callback):
+    def on_validation_end(self, trainer: Trainer, pl_module: LightningModule):
+        # log mel spectrograms
+        for idx_mel, mel in enumerate(pl_module.validation_mels[:5], start=1):
+            pl_module.logger.experiment.add_image(
+                f"val_mel_{idx_mel}",
+                utils.plot_spectrogram_to_numpy(mel.to("cpu").numpy()),
+                global_step=trainer.global_step,
+                dataformats="HWC",
+            )
+
+        for idx_mel, mel in enumerate(pl_module.inferred_mels[:5], start=1):
+            pl_module.logger.experiment.add_image(
+                f"inf_mel_{idx_mel}",
+                utils.plot_spectrogram_to_numpy(mel.to("cpu").numpy()),
+                global_step=trainer.global_step,
+                dataformats="HWC",
+            )
+
+        for idx_attn, attn in enumerate(pl_module.inferred_attn[:5], start=1):
+            pl_module.logger.experiment.add_image(
+                f"inf_attn_{idx_attn}",
+                utils.plot_alignment_to_numpy(attn.to("cpu").numpy()),
+                global_step=trainer.global_step,
+                dataformats="HWC",
+            )
+
+        # log audio
+        for idx_audio, audio in enumerate(pl_module.validation_y_hat[:5], start=1):
+            pl_module.logger.experiment.add_audio(
+                f"val_audio_{idx_audio}",
+                audio.to("cpu").numpy(),
+                global_step=trainer.global_step,
+                sample_rate=pl_module.config.sampling_rate,
+            )
+
+        for idx_audio, audio in enumerate(pl_module.inferred_y_hat[:5], start=1):
+            pl_module.logger.experiment.add_audio(
+                f"inf_audio_{idx_audio}",
+                audio.to("cpu").numpy(),
+                global_step=trainer.global_step,
+                sample_rate=pl_module.config.sampling_rate,
+            )
 
 
 class MyDataModule(LightningDataModule):
@@ -55,7 +101,7 @@ class MyDataModule(LightningDataModule):
 
     def setup(self, stage: str = None):
         # make assignments here (val/train/test split)
-        val_size = min(200, int(len(self.dataset) * 0.05))
+        val_size = min(100, int(len(self.dataset) * 0.05))
         self.train_dataset, self.val_dataset = random_split(
             self.dataset,
             [len(self.dataset) - val_size, val_size],
@@ -72,8 +118,8 @@ class MyDataModule(LightningDataModule):
     def train_dataloader(self):
         return DataLoader(
             self.train_dataset,
-            num_workers=2,
-            shuffle=False,
+            num_workers=4,
+            shuffle=True,
             batch_size=self.batch_size,
             pin_memory=True,
             # batch_sampler=self.train_sampler,
@@ -83,7 +129,7 @@ class MyDataModule(LightningDataModule):
     def val_dataloader(self):
         return DataLoader(
             self.val_dataset,
-            num_workers=2,
+            num_workers=4,
             shuffle=False,
             batch_size=self.batch_size,
             pin_memory=True,
@@ -255,9 +301,7 @@ class MyTrainingModule(LightningModule):
         # Optimize Discriminator #
         ##########################
         y_d_hat_r, y_d_hat_g, _, _ = self.D(y_slice, y_hat.detach())
-        losses_disc_r, losses_disc_g = discriminator_loss(
-            y_d_hat_r, y_d_hat_g
-        )
+        losses_disc_r, losses_disc_g = discriminator_loss(y_d_hat_r, y_d_hat_g)
         loss_disc = torch.mean(losses_disc_r) + torch.mean(losses_disc_g)
 
         d_opt.zero_grad()
@@ -282,7 +326,13 @@ class MyTrainingModule(LightningModule):
             + (loss_dur * self.config.c_dur)
             + (loss_kl * self.config.c_kl)
             + (loss_mel * self.config.c_mel)
-        ) / (1 + self.config.c_fm + self.config.c_dur + self.config.c_kl + self.config.c_mel)
+        ) / (
+            1
+            + self.config.c_fm
+            + self.config.c_dur
+            + self.config.c_kl
+            + self.config.c_mel
+        )
 
         g_opt.zero_grad()
         self.manual_backward(loss_gen_all)
@@ -312,6 +362,13 @@ class MyTrainingModule(LightningModule):
             prog_bar=True,
         )
 
+    def on_validation_start(self) -> None:
+        self.validation_mels = []
+        self.validation_y_hat = []
+        self.inferred_mels = []
+        self.inferred_y_hat = []
+        self.inferred_attn = []
+
     def validation_step(self, batch, batch_idx):
         x, x_lengths, spec, spec_lengths, y, y_lengths = batch
 
@@ -330,13 +387,14 @@ class MyTrainingModule(LightningModule):
             mel = spec
         else:
             mel = spec_to_mel_torch(
-                spec.float(),
+                spec,
                 self.config.filter_length,
                 self.config.n_mel_channels,
                 self.config.sampling_rate,
                 self.config.mel_fmin,
                 self.config.mel_fmax,
             )
+
         y_mel = commons.slice_segments(
             mel, ids_slice, self.config.segment_size // self.config.hop_length
         )
@@ -351,10 +409,37 @@ class MyTrainingModule(LightningModule):
             self.config.mel_fmax,
         )
 
+        for y_hat_i in y_hat:
+            self.validation_y_hat.append(y_hat_i)
+        for mel_i in y_hat_mel:
+            self.validation_mels.append(mel_i)
+
         loss_dur = torch.sum(l_length.float())
         loss_mel = torch.nn.functional.l1_loss(y_mel, y_hat_mel)
 
         self.log_dict({"VL/dur": loss_dur, "VL/mel": loss_mel})
+
+        # Inference
+        if batch_idx == 0:
+            y_hat, attn, mask, *_ = self.G.infer(x, x_lengths, max_len=1000)
+            y_hat_lengths = mask.sum([1, 2]).long() * self.config.hop_length
+
+            y_hat_mel = mel_spectrogram_torch(
+                y_hat.squeeze(1),
+                self.config.filter_length,
+                self.config.n_mel_channels,
+                self.config.sampling_rate,
+                self.config.hop_length,
+                self.config.win_length,
+                self.config.mel_fmin,
+                self.config.mel_fmax,
+            )
+            for mel_i in y_hat_mel:
+                self.inferred_mels.append(mel_i)
+            for y_hat_i, len_i in zip(list(y_hat), list(y_hat_lengths)):
+                self.inferred_y_hat.append(y_hat_i[:, :len_i])
+            for attn_i in attn:
+                self.inferred_attn.append(attn_i[0])
 
     def configure_optimizers(self):
         g_opt = torch.optim.AdamW(
@@ -400,7 +485,7 @@ class MyLightningCLI(LightningCLI):
 
 def cli_main():
     try:
-        torch.set_float32_matmul_precision('medium')
+        torch.set_float32_matmul_precision("medium")
         logger.info("TensorCore activated")
     except Exception as e:
         logger.info("TensorCore not activated")

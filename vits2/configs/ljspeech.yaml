@@ -1,7 +1,11 @@
 # lightning.pytorch==2.4.0
 trainer:
   # accelerator: cpu
-  # max_epochs: 1
+  max_epochs: -1
+  callbacks:
+    - class_path: cli.TensorBoardEvalCallback
+      # init_args:
+        # 
 data:
   datasets:
   - type: ljspeech
