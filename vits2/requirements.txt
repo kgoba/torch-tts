@@ -13,3 +13,4 @@ tensorboard==2.17.1
 # onnxruntime==1.15.1
 # gradio
 lightning==2.4.0
+jsonargparse==4.32.0
