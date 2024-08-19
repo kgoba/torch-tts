@@ -1,5 +1,5 @@
 """ from https://github.com/keithito/tacotron """
-# from text import cleaners
+from text import cleaners
 from text.symbols import symbols
 
 
@@ -16,7 +16,10 @@ def text_to_sequence(text, cleaner_names):
     Returns:
       List of integers corresponding to the symbols in the text
     """
-    clean_text = _clean_text(text, cleaner_names)
+    if cleaner_names:
+        clean_text = _clean_text(text, cleaner_names)
+    else:
+        clean_text = text
     return cleaned_text_to_sequence(clean_text)
 
 

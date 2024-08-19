@@ -15,7 +15,7 @@ data:
   batch_size: 8
   config:
     max_audio_len: 800
-    cleaned_text: true
+    text_cleaners: ['transliteration_cleaners']
     use_mel_posterior_encoder: true
     hop_length: &hop_length 256
     win_length: &win_length 1024

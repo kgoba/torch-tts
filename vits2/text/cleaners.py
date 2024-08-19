@@ -14,9 +14,10 @@ hyperparameter. Some cleaners are English-specific. You'll typically want to use
 
 import re
 from unidecode import unidecode
-from phonemizer import phonemize
-from phonemizer.backend import EspeakBackend
-backend = EspeakBackend("en-us", preserve_punctuation=True, with_stress=True)
+
+# from phonemizer import phonemize
+# from phonemizer.backend import EspeakBackend
+# backend = EspeakBackend("en-us", preserve_punctuation=True, with_stress=True)
 
 
 # Regular expression matching whitespace:

@@ -27,9 +27,8 @@ class DataConfig:
     filter_length: int = 1024
     max_wav_value: float = 32768.0
     use_mel_posterior_encoder: bool = True
-    text_cleaners: list = field(default_factory=lambda: ["english_cleaners"])
+    text_cleaners: list = field(default_factory=lambda: [])
     add_blank: bool = False
-    cleaned_text: bool = False
     min_text_len: int = 1
     max_text_len: int = 190
     min_audio_len: int = 300
@@ -49,7 +48,7 @@ class TextAudioLoader(torch.utils.data.Dataset):
     def __init__(self, dataset_path, hparams: DataConfig):
         self.hparams = hparams
         self.audiopaths_and_text = [
-            (entry["audio_path"], entry["text_surface"])
+            (entry["audio_path"], entry["text_normalised"])
             for entry in parse_ljspeech(dataset_path)
         ]
 
@@ -142,10 +141,7 @@ class TextAudioLoader(torch.utils.data.Dataset):
         return spec, audio_norm
 
     def get_text(self, text):
-        if self.hparams.cleaned_text:
-            text_norm = cleaned_text_to_sequence(text)
-        else:
-            text_norm = text_to_sequence(text, self.hparams.text_cleaners)
+        text_norm = text_to_sequence(text, self.hparams.text_cleaners)
         if self.hparams.add_blank:
             text_norm = commons.intersperse(text_norm, 0)
         text_norm = torch.LongTensor(text_norm)
