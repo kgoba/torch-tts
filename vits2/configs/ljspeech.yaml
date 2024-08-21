@@ -6,15 +6,17 @@ trainer:
     - class_path: cli.TensorBoardEvalCallback
       # init_args:
         # 
+  val_check_interval: 500
+  check_val_every_n_epoch: null
+ 
 data:
   datasets:
   - type: ljspeech
     path: LJSpeech-1.1
-  # training_files: filelists/ljs_audio_text_train_filelist.txt.cleaned
-  # validation_files: filelists/ljs_audio_text_val_filelist.txt.cleaned
+
   batch_size: 8
+  
   config:
-    max_audio_len: 800
     text_cleaners: ['transliteration_cleaners']
     use_mel_posterior_encoder: true
     hop_length: &hop_length 256
@@ -26,6 +28,7 @@ data:
       - ';:,.!?¡¿—…"«»“” '
       - "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
       - "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
+
 model:
   config:
     # inter_channels: 192
@@ -43,11 +46,14 @@ model:
     # upsample_kernel_sizes: [16, 16, 4, 4]
     n_speakers: 0
     gin_channels: 0
+    
     use_sdp: true
+    
+    use_transformer_flows: true
+    transformer_flow_type: pre_conv
     use_spk_conditioned_encoder: false
-    use_transformer_flows: false
-    transformer_flow_type: mono_layer_post_residual
-    use_noise_scaled_mas: false
+    
+    use_noise_scaled_mas: true
     mas_noise_scale_initial: 0.01
     noise_scale_delta: 2.0e-06
 

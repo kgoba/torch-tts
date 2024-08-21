@@ -169,20 +169,21 @@ class ModelConfig:
     upsample_rates: list[int] = field(default_factory=lambda: [8, 8, 2, 2])
     upsample_initial_channel: int = 512
     upsample_kernel_sizes: list[int] = field(default_factory=lambda: [16, 16, 4, 4])
+
     n_speakers: int = 0
     gin_channels: int = 0
     use_sdp: bool = True
     use_spk_conditioned_encoder: bool = False
-    use_transformer_flows: bool = False
-    transformer_flow_type: str = "mono_layer_post_residual"
-    use_noise_scaled_mas: bool = False
+    use_transformer_flows: bool = True
+    transformer_flow_type: str = "pre_conv"
+    use_noise_scaled_mas: bool = True
     mas_noise_scale_initial: float = 0.01
     noise_scale_delta: float = 2e-6
     use_spectral_norm: bool = False
-    use_mel_posterior_encoder: bool = False
+    use_mel_posterior_encoder: bool = True
 
-    lr_gen: float = 1e-5
-    lr_disc: float = 1e-5
+    lr_gen: float = 2e-4
+    lr_disc: float = 2e-4
     weight_decay: float = 1e-2
 
 
@@ -228,9 +229,6 @@ class MyTrainingModule(LightningModule):
             use_spk_conditioned_encoder=config.use_spk_conditioned_encoder,
             use_transformer_flows=config.use_transformer_flows,
             transformer_flow_type=config.transformer_flow_type,
-            use_noise_scaled_mas=config.use_noise_scaled_mas,
-            mas_noise_scale_initial=config.mas_noise_scale_initial,
-            noise_scale_delta=config.noise_scale_delta,
         )
         self.D = MultiPeriodDiscriminator(config.use_spectral_norm)
         # if duration_discriminator_type == "dur_disc_1":
@@ -253,9 +251,14 @@ class MyTrainingModule(LightningModule):
 
     def training_step(self, batch, batch_idx):
         g_opt, d_opt = self.optimizers()
-
+    
         x, x_lengths, spec, spec_lengths, y, y_lengths = batch
         # batch_size = x.shape[0]
+        
+        mas_noise_scale = max((
+            self.config.mas_noise_scale_initial
+            - self.config.noise_scale_delta * self.global_step), 0
+        ) if self.config.use_noise_scaled_mas else None
 
         (
             y_hat,
@@ -266,7 +269,7 @@ class MyTrainingModule(LightningModule):
             z_mask,
             (z, z_p, m_p, logs_p, m_q, logs_q),
             (hidden_x, logw, logw_),
-        ) = self.G(x, x_lengths, spec, spec_lengths)
+        ) = self.G(x, x_lengths, spec, spec_lengths, mas_noise_scale=mas_noise_scale)
 
         y_slice = commons.slice_segments(
             y, ids_slice * self.config.hop_length, self.config.segment_size
@@ -311,8 +314,7 @@ class MyTrainingModule(LightningModule):
         ######################
         # Optimize Generator #
         ######################
-        with torch.no_grad():
-            _, y_d_hat_g, fmap_r, fmap_g = self.D(y_slice, y_hat)
+        _, y_d_hat_g, fmap_r, fmap_g = self.D(y_slice, y_hat)
         loss_dur = torch.sum(l_length.float())
         loss_mel = torch.nn.functional.l1_loss(y_mel, y_hat_mel)
         loss_kl = kl_loss(z_p, logs_q, m_p, logs_p, z_mask)

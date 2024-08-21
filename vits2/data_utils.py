@@ -31,8 +31,6 @@ class DataConfig:
     add_blank: bool = False
     min_text_len: int = 1
     max_text_len: int = 190
-    min_audio_len: int = 300
-    max_audio_len: int = 1500
     symbols: list[str] = field(
         default_factory=lambda: ["abcdefghijklmnopqrstuvwxyz!'(),-.:;? "]
     )
@@ -73,12 +71,8 @@ class TextAudioLoader(torch.utils.data.Dataset):
             ):
                 audio_info = sf.info(audiopath)
                 audio_len = audio_info.frames // self.hparams.hop_length
-                if (
-                    audio_len >= self.hparams.min_audio_len
-                    and audio_len <= self.hparams.max_audio_len
-                ):
-                    audiopaths_and_text_new.append([audiopath, text])
-                    lengths.append(audio_len)
+                audiopaths_and_text_new.append([audiopath, text])
+                lengths.append(audio_len)
         self.audiopaths_and_text = audiopaths_and_text_new
         self.lengths = lengths
 

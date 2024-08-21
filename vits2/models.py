@@ -1139,17 +1139,12 @@ class SynthesizerTrn(nn.Module):
         use_spk_conditioned_encoder=False,
         use_transformer_flows=False,
         transformer_flow_type="mono_layer_post_residual",
-        use_noise_scaled_mas=False,
-        mas_noise_scale_initial=0.01,
-        noise_scale_delta=2e-6,
         **kwargs,
     ):
         super().__init__()
 
         self.segment_size = segment_size
         self.use_sdp = use_sdp
-        self.use_noise_scaled_mas = use_noise_scaled_mas
-        self.current_mas_noise_scale = mas_noise_scale_initial
 
         if use_transformer_flows:
             assert (
@@ -1216,7 +1211,7 @@ class SynthesizerTrn(nn.Module):
         if n_speakers > 1:
             self.emb_g = nn.Embedding(n_speakers, gin_channels)
 
-    def forward(self, x, x_lengths, y, y_lengths, sid=None):
+    def forward(self, x, x_lengths, y, y_lengths, sid=None, mas_noise_scale=None):
         if sid != None:
             g = self.emb_g(sid).unsqueeze(-1)  # [b, h, 1]
         else:
@@ -1243,11 +1238,11 @@ class SynthesizerTrn(nn.Module):
             )  # [b, 1, t_s]
             neg_cent = neg_cent1 + neg_cent2 + neg_cent3 + neg_cent4
 
-            if self.use_noise_scaled_mas:
+            if mas_noise_scale is not None:
                 epsilon = (
                     torch.std(neg_cent)
                     * torch.randn_like(neg_cent)
-                    * self.current_mas_noise_scale
+                    * mas_noise_scale
                 )
                 neg_cent = neg_cent + epsilon
 
