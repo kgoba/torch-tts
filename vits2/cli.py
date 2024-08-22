@@ -28,6 +28,8 @@ import utils
 
 logger = logging.getLogger(__name__)
 
+NUM_OPTIMIZERS = 2
+
 
 class TensorBoardEvalCallback(Callback):
     def on_validation_end(self, trainer: Trainer, pl_module: LightningModule):
@@ -185,6 +187,7 @@ class ModelConfig:
     lr_gen: float = 2e-4
     lr_disc: float = 2e-4
     weight_decay: float = 1e-2
+    accumulate_grad: int = 1
 
 
 class MyTrainingModule(LightningModule):
@@ -249,8 +252,15 @@ class MyTrainingModule(LightningModule):
         #     )
         # self.DD = net_dur_disc
 
+    def on_train_start(self):
+        self._training_step = self.global_step // NUM_OPTIMIZERS
+        self.loss_scale = 1 / float(self.config.accumulate_grad)
+    
     def training_step(self, batch, batch_idx):
         g_opt, d_opt = self.optimizers()
+
+        do_opt_step = (self._training_step + 1) % self.config.accumulate_grad == 0
+        self._training_step += 1
     
         x, x_lengths, spec, spec_lengths, y, y_lengths = batch
         # batch_size = x.shape[0]
@@ -300,20 +310,10 @@ class MyTrainingModule(LightningModule):
             self.config.mel_fmax,
         )
 
-        ##########################
-        # Optimize Discriminator #
-        ##########################
-        y_d_hat_r, y_d_hat_g, _, _ = self.D(y_slice, y_hat.detach())
-        losses_disc_r, losses_disc_g = discriminator_loss(y_d_hat_r, y_d_hat_g)
-        loss_disc = torch.mean(losses_disc_r) + torch.mean(losses_disc_g)
-
-        d_opt.zero_grad()
-        self.manual_backward(loss_disc)
-        d_opt.step()
-
         ######################
         # Optimize Generator #
         ######################
+        self.toggle_optimizer(g_opt)
         _, y_d_hat_g, fmap_r, fmap_g = self.D(y_slice, y_hat)
         loss_dur = torch.sum(l_length.float())
         loss_mel = torch.nn.functional.l1_loss(y_mel, y_hat_mel)
@@ -336,9 +336,25 @@ class MyTrainingModule(LightningModule):
             + self.config.c_mel
         )
 
-        g_opt.zero_grad()
-        self.manual_backward(loss_gen_all)
-        g_opt.step()
+        self.manual_backward(loss_gen_all * self.loss_scale)
+        if do_opt_step:
+            g_opt.step()
+            g_opt.zero_grad()
+        self.untoggle_optimizer(g_opt)
+
+        ##########################
+        # Optimize Discriminator #
+        ##########################
+        self.toggle_optimizer(d_opt)
+        y_d_hat_r, y_d_hat_g, _, _ = self.D(y_slice, y_hat.detach())
+        losses_disc_r, losses_disc_g = discriminator_loss(y_d_hat_r, y_d_hat_g)
+        loss_disc = torch.mean(losses_disc_r) + torch.mean(losses_disc_g)
+
+        self.manual_backward(loss_disc * self.loss_scale)
+        if do_opt_step:
+            d_opt.step()
+            d_opt.zero_grad()
+        self.untoggle_optimizer(d_opt)
 
         if x.device.type == "mps":
             # NB: for memory efficiency use mimalloc (see https://github.com/pytorch/pytorch/issues/111517)
@@ -423,7 +439,7 @@ class MyTrainingModule(LightningModule):
 
         # Inference
         if batch_idx == 0:
-            y_hat, attn, mask, *_ = self.G.infer(x, x_lengths, max_len=1000)
+            y_hat, attn, mask, *_ = self.G.infer(x, x_lengths, max_len=1000, noise_scale=0.25, noise_scale_w=0.25)
             y_hat_lengths = mask.sum([1, 2]).long() * self.config.hop_length
 
             y_hat_mel = mel_spectrogram_torch(
